@@ -1,6 +1,5 @@
 from dataclasses import dataclass
-import json
-from typing import Any, Dict, List
+from typing import List
 from abc import ABC, abstractmethod
 import os
 from pydantic import BaseModel
@@ -9,6 +8,20 @@ from dotenv import load_dotenv
 
 
 load_dotenv()
+
+
+class ChatClient(ABC):
+    @abstractmethod
+    def chat_loop(self):
+        pass
+
+
+class CliChatClient(ChatClient):
+    def __init__(self):
+        pass
+
+    def chat(self):
+        pass
 
 
 class LLMClient(ABC):
@@ -36,6 +49,7 @@ class LLMClient(ABC):
         Get a response with the tool pipeline included.
         """
         pass
+
 
 @dataclass
 class XAIClient(LLMClient):
@@ -247,18 +261,3 @@ class OpenAIClient(LLMClient):
         except Exception as e:
             print(f"Error: {e}")
 
-
-# The ais are pretty insistent on using these abstract base classes.
-class ChatClient(ABC):
-    @abstractmethod
-    def chat_loop(self):
-        pass
-
-
-# TODO: Need a cli chat client pretty bad!
-class CliChatClient(ChatClient):
-    def __init__(self):
-        pass
-
-    def chat(self):
-        pass
