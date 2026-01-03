@@ -2,6 +2,7 @@ from src.clients import LLMClient,XAIClient, OllamaClient
 from typing import List
 from src.instructions import ModelInstructions
 from src.todos import TodoStore
+from src.fact_store import FactStore
 
 
 class ModuleXAIClient:
@@ -185,12 +186,15 @@ class ModuleTodos:
 
 class ModuleFacts:
     options: List[tuple[str, str, callable]]
+    store: FactStore
     
     def __init__(self):
         self.options = [
-            ("1", "Create Fact", self.create_fact),
-            ("2", "List Facts", self.list_facts),
+            ("1", "Create Fact", self.append_fact),
+            ("2", "Get All Facts", self.get_all_facts),
         ]
+        
+        self.store = FactStore(fact_store_path="facts.yaml")
     
     def option_select(self):
         print("\nSelect an Option:")
@@ -203,11 +207,18 @@ class ModuleFacts:
                 return
         print("Invalid option")
 
-    def create_fact(self):
-        print("Creating fact...")
-
-    def list_facts(self):
+    def append_fact(self):
+        print("Appending new fact...")
+        new_fact = input("Please enter a new fact: ")
+        fact = self.store.append_fact(fact_str=new_fact)
+        if fact:
+            print(f"New fact appended to facts.yaml:\n{fact}")
+        
+    def get_all_facts(self):
         print("Listing facts...")
+        facts = self.store.get_all_facts()
+        for f in facts:
+            print(f"   {f}")
 
 
 if __name__ == "__main__":
