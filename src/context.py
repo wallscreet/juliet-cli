@@ -67,7 +67,7 @@ class ChromaMemoryAdapter(MemoryAdapter):
     def _delete_collection(self, name: str):
         self.client.delete_collection(name=name)
         print(f"Collection {name} has been deleted.")
-    
+        
     def store_knowledge(self):
         pass
 

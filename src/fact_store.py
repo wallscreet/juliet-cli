@@ -1,12 +1,10 @@
 from datetime import datetime
 from uuid import uuid4
-import chromadb
 from pydantic import BaseModel
 import yaml
 from typing import List
 import os
 from context import ChromaMemoryAdapter
-from messages import Message, Turn
 
 
 class Fact(BaseModel):

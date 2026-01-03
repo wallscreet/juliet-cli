@@ -10,4 +10,6 @@ wheels/
 .venv
 .env
 
-/isos
+/isos/*/*/
+
+facts.yaml
