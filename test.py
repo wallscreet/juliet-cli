@@ -87,7 +87,8 @@ class ModuleInstructions:
     
     def __init__(self):
         self.iso_name = input("Please enter name: ").lower().strip()
-        self.method = input("Method: ").lower().strip()
+        #self.method = input("Method: ").lower().strip()
+        self.method = "load"
         
         self.options = [
             ("1", "Print Instructions", self.print_instructions),
@@ -123,7 +124,7 @@ class ModuleInstructions:
     
     def create_new_iso_instructions(self):
         instructions = ModelInstructions(method="create", assistant_name=self.iso_name)
-        print(f"\nCreated new Instructions for {self.iso_name}:")
+        print(f"\nCreated new Instructions for {instructions.name}:")
 
 
 class ModuleTodos:
