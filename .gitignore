@@ -11,5 +11,6 @@ wheels/
 .env
 
 /isos/*/*/
+/workspace/
 
 facts.yaml

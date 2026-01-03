@@ -1,0 +1,17 @@
+todos:
+- completed: true
+  created_at: 2026-01-03 10:34:52.279785
+  description: Take out the trash
+  id: d4432735-869a-481e-9651-8101f7687f54
+- completed: false
+  created_at: 2026-01-03 10:36:30.809876
+  description: draw a picture
+  id: 23118aa2-21e9-4082-b258-63711d5e9137
+- completed: true
+  created_at: 2026-01-03 10:38:14.226516
+  description: go to the store
+  id: 4eca811e-9f55-4606-a2ff-505cc18c2ac8
+- completed: false
+  created_at: 2026-01-03 10:51:34.845888
+  description: Play with Kevin
+  id: 6d5508c2-059c-4274-98fb-f5b3b5dd2c62

@@ -1,6 +1,7 @@
 from src.clients import LLMClient,XAIClient, OllamaClient
 from typing import List
 from src.instructions import ModelInstructions
+from src.todos import TodoStore
 
 
 class ModuleXAIClient:
@@ -124,6 +125,91 @@ class ModuleInstructions:
         print(f"\nCreated new Instructions for {self.iso_name}:")
 
 
+class ModuleTodos:
+    options: List[tuple[str, str, callable]]
+    store: TodoStore
+    
+    def __init__(self):
+        self.options = [
+            ("1", "Create Todo", self.create_todo),
+            ("2", "Get All Todos", self.get_all_todos),
+            ("3", "Mark Todo Completed", self.mark_todo_completed),
+            ("4", "Filter Todos Completed", self.filter_todos_completed),
+        ]
+        
+        self.store = TodoStore("todos.yaml")
+    
+    def option_select(self):
+        print("\nSelect an Option:")
+        for key, desc, _ in self.options:
+            print(f"{key}: {desc}")
+        choice = input("> ").strip()
+        for key, _, func in self.options:
+            if choice == key:
+                func()
+                return
+        print("Invalid option")
+
+    def create_todo(self):
+        new_todo = input("Please enter new todo: ")
+        item = self.store.append_todo(new_todo)
+        print(f"Appended todo:\n    {item}")
+        print("")
+
+    def get_all_todos(self):
+        print("Getting Todos...")
+        todos = self.store.get_all_todos()
+        print("\nTodos List..")
+        for t in todos:
+            print(t)
+        print("")
+    
+    def mark_todo_completed(self):
+        todo_id = input("Enter todo ID: ")
+        self.store.mark_completed(todo_id=todo_id)
+        print(f"\nTodo, {todo_id}, marked completed")
+        print("")
+    
+    def filter_todos_completed(self):
+        user_input = input("Filter Completed: ").strip().lower()
+        if user_input in ['true', 't', 'yes', 'y', '1']:
+            completed = True
+        elif user_input in ['false', 'f', 'no', 'n', '0']:
+            completed = False
+        filtered_todos = self.store.filter_todos(completed=completed)
+        print(f"\nFiltered Todos List Completed == {completed}..")
+        for t in filtered_todos:
+            print(t)
+        print("")
+
+
+class ModuleFacts:
+    options: List[tuple[str, str, callable]]
+    
+    def __init__(self):
+        self.options = [
+            ("1", "Create Fact", self.create_fact),
+            ("2", "List Facts", self.list_facts),
+        ]
+    
+    def option_select(self):
+        print("\nSelect an Option:")
+        for key, desc, _ in self.options:
+            print(f"{key}: {desc}")
+        choice = input("> ").strip()
+        for key, _, func in self.options:
+            if choice == key:
+                func()
+                return
+        print("Invalid option")
+
+    def create_fact(self):
+        print("Creating fact...")
+
+    def list_facts(self):
+        print("Listing facts...")
+
+
 if __name__ == "__main__":
     print("Welcome to the Juliet CLI testing module. Please select a module to test.")
     
@@ -131,6 +217,8 @@ if __name__ == "__main__":
         ("1", "XAI Client", ModuleXAIClient),
         ("2", "Ollama Client", ModuleOllamaClient),
         ("3", "Iso Instructions", ModuleInstructions),
+        ("4", "Todo Store", ModuleTodos),
+        ("5", "Fact Store", ModuleFacts),
         # Add more: ("n", "Next Module", NextModuleClass),
     ]
 
