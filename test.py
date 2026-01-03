@@ -130,6 +130,8 @@ class ModuleInstructions:
 class ModuleTodos:
     options: List[tuple[str, str, callable]]
     store: TodoStore
+    user_name: str
+    iso_name: str
     
     def __init__(self):
         self.options = [
@@ -138,8 +140,9 @@ class ModuleTodos:
             ("3", "Mark Todo Completed", self.mark_todo_completed),
             ("4", "Filter Todos Completed", self.filter_todos_completed),
         ]
-        
-        self.store = TodoStore("todos.yaml")
+        self.iso_name="juliet"
+        self.user_name="wallscreet"
+        self.store = TodoStore(f"isos/{self.iso_name}/users/{self.user_name}/todos.yaml")
     
     def option_select(self):
         print("\nSelect an Option:")
@@ -188,6 +191,8 @@ class ModuleTodos:
 class ModuleFacts:
     options: List[tuple[str, str, callable]]
     store: FactStore
+    iso_name: str
+    user_name: str
     
     def __init__(self):
         self.options = [
@@ -195,7 +200,9 @@ class ModuleFacts:
             ("2", "Get All Facts", self.get_all_facts),
         ]
         
-        self.store = FactStore(fact_store_path="facts.yaml")
+        self.iso_name="juliet"
+        self.user_name="wallscreet"
+        self.store = FactStore(fact_store_path=f"isos/{self.iso_name}/users/{self.user_name}/facts.yaml")
     
     def option_select(self):
         print("\nSelect an Option:")
