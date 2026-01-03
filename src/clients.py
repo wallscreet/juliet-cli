@@ -260,4 +260,3 @@ class OpenAIClient(LLMClient):
             return completion.choices[0].message, completion.usage
         except Exception as e:
             print(f"Error: {e}")
-

@@ -3,6 +3,7 @@ from typing import List
 from src.instructions import ModelInstructions
 from src.todos import TodoStore
 from src.fact_store import FactStore
+from src.iso import IsoClient
 
 
 class ModuleXAIClient:
@@ -29,6 +30,8 @@ class ModuleXAIClient:
         print("Invalid option")
     
     def get_response(self):
+        user_input = input("User Request (Enter for default): ").strip()
+        content = user_input if user_input else "This is a test message. Please confirm receipt and introduce yourself."
         messages = [
             {
                 "role": "system",
@@ -36,7 +39,7 @@ class ModuleXAIClient:
             },
             {
                 "role": "user",
-                "content": "This is a test message. Please confirm receipt and introduce yourself."
+                "content": content
             }
         ]        
         print(f"Get Response Results:\n{self.client.get_response(model=self.model, messages=messages)}")
@@ -67,6 +70,9 @@ class ModuleOllamaClient:
         print("Invalid option")
     
     def get_response(self):
+        user_input = input("User Request (Enter for default): ").strip()
+        content = user_input if user_input else "This is a test message. Please confirm receipt and introduce yourself."
+        
         messages = [
             {
                 "role": "system",
@@ -74,7 +80,7 @@ class ModuleOllamaClient:
             },
             {
                 "role": "user",
-                "content": "This is a test message. Please confirm receipt and introduce yourself."
+                "content": content
             }
         ]        
         print(f"Get Response Results:\n{self.client.get_response(model=self.model, messages=messages)}")
@@ -132,6 +138,7 @@ class ModuleTodos:
     store: TodoStore
     user_name: str
     iso_name: str
+    todo_store_path: str
     
     def __init__(self):
         self.options = [
@@ -142,7 +149,9 @@ class ModuleTodos:
         ]
         self.iso_name="juliet"
         self.user_name="wallscreet"
-        self.store = TodoStore(f"isos/{self.iso_name}/users/{self.user_name}/todos.yaml")
+        self.todo_store_path = f"isos/{self.iso_name}/users/{self.user_name}/todos.yaml"
+        
+        self.store = TodoStore(todo_store_path=self.todo_store_path)
     
     def option_select(self):
         print("\nSelect an Option:")
@@ -193,6 +202,7 @@ class ModuleFacts:
     store: FactStore
     iso_name: str
     user_name: str
+    fact_store_path: str
     
     def __init__(self):
         self.options = [
@@ -202,7 +212,9 @@ class ModuleFacts:
         
         self.iso_name="juliet"
         self.user_name="wallscreet"
-        self.store = FactStore(fact_store_path=f"isos/{self.iso_name}/users/{self.user_name}/facts.yaml")
+        self.fact_store_path = f"isos/{self.iso_name}/users/{self.user_name}/facts.yaml"
+        
+        self.store = FactStore(fact_store_path=self.fact_store_path)
     
     def option_select(self):
         print("\nSelect an Option:")
@@ -220,17 +232,59 @@ class ModuleFacts:
         new_fact = input("Please enter a new fact: ")
         fact = self.store.append_fact(fact_str=new_fact)
         if fact:
-            print(f"New fact appended to facts.yaml:\n{fact}")
+            print(f"\nNew fact appended to facts.yaml:\n{fact}")
+        print("")
         
     def get_all_facts(self):
-        print("Listing facts...")
+        print("\nListing facts...")
         facts = self.store.get_all_facts()
         for f in facts:
             print(f"   {f}")
+        print("")
+        
+
+class ModuleIsoClient:
+    options: List[tuple[str, str, callable]]
+    iso_client: IsoClient
+    
+    def __init__(self):
+        iso_name = input("Enter Iso Name: ").lower().strip()
+        user_name = input("Enter User's Name: ").lower().strip()
+        self.iso_client = IsoClient(iso_name=iso_name, user_name=user_name) 
+        
+        self.options = [
+            ("1", "Build Prompt", self.build_prompt),
+            ("2", "Get Tools", self.get_tools),
+        ]
+ 
+    def option_select(self):
+        print("\nSelect an Option:")
+        for key, desc, _ in self.options:
+            print(f"{key}: {desc}")
+        choice = input("> ").strip()
+        for key, _, func in self.options:
+            if choice == key:
+                func()
+                return
+        print("Invalid option")
+    
+    def build_prompt(self):
+        print("Building Prompt")
+        user_input = input("Enter User Request: ")
+        messages = self.iso_client.build_prompt(user_input=user_input)
+        print(f"Prompt Messages:\n{messages}")
+    
+    def get_tools(self):
+        print("Getting Iso tools...")
+        tools = self.iso_client.get_tools()
+        print(f"Registered Tools Available:\n{tools}")
 
 
+# ===================== #
+# ===== MAIN LOOP ===== #
+# ===================== #
 if __name__ == "__main__":
-    print("Welcome to the Juliet CLI testing module. Please select a module to test.")
+    print("\nWelcome to the Juliet CLI testing module. Please select a module to test.\n")
     
     modules = [
         ("1", "XAI Client", ModuleXAIClient),
@@ -238,12 +292,14 @@ if __name__ == "__main__":
         ("3", "Iso Instructions", ModuleInstructions),
         ("4", "Todo Store", ModuleTodos),
         ("5", "Fact Store", ModuleFacts),
+        ("6", "Iso Client", ModuleIsoClient),
         # Add more: ("n", "Next Module", NextModuleClass),
     ]
 
     for key, desc, _ in modules:
         print(f"{key}: {desc}")
 
+    print("")
     choice = input("> ").strip()
 
     for key, _, module_class in modules:
