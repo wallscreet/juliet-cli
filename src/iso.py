@@ -19,14 +19,17 @@ class IsoClient:
         self.user_name = user_name
         self._tools = []
         
+        # File paths
         fact_store_path = f"isos/{self.iso_name}/users/{self.user_name}/facts.yaml"
         todo_store_path = f"isos/{self.iso_name}/users/{self.user_name}/todos.yaml"
         
+        # Modules
         self.llm_client = XAIClient()
         self.instructions = ModelInstructions(method="load", assistant_name=self.iso_name)
         self.fact_store = FactStore(fact_store_path)
         self.todo_store = TodoStore(todo_store_path=todo_store_path)
         
+        # Tool Registration
         self.register_tools()
 
     def _register_tool(self, name: str, description: str, parameters: dict):
