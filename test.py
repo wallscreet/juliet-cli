@@ -255,6 +255,7 @@ class ModuleIsoClient:
         self.options = [
             ("1", "Build Prompt", self.build_prompt),
             ("2", "Get Tools", self.get_tools),
+            ("3", "Generate Response with Tools", self.generate_response_with_tools),
         ]
  
     def option_select(self):
@@ -278,6 +279,15 @@ class ModuleIsoClient:
         print("Getting Iso tools...")
         tools = self.iso_client.get_tools()
         print(f"Registered Tools Available:\n{tools}")
+    
+    def generate_response_with_tools(self):
+        print("Generating Response with Tools...")
+        user_input = input("Enter User Request: ")
+        model = "grok-4-1-fast-non-reasoning"
+        response, messages, usage = self.iso_client.generate_response_with_tools(model=model, user_input=user_input)
+        print(f"Response with Tools:\n{response}")
+        print(f"\nMessages:\n{messages}")
+        print(f"\nUsage:\n{usage}")
 
 
 # ===================== #

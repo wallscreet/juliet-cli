@@ -27,13 +27,9 @@ class IsoClient:
         self.fact_store = FactStore(fact_store_path)
         self.todo_store = TodoStore(todo_store_path=todo_store_path)
         
-        self.register_tool(
-            name="add_fact",
-            description="Add a new fact to remember.",
-            parameters=Fact.model_json_schema()
-        )
+        self.register_tools()
 
-    def register_tool(self, name: str, description: str, parameters: dict):
+    def _register_tool(self, name: str, description: str, parameters: dict):
         """Register a new tool that the LLM can call."""
         new_tool = {
             "type": "function",
@@ -45,6 +41,15 @@ class IsoClient:
         }
         self._tools.append(new_tool)
     
+    def register_tools(self):
+        """Initialize the toolbox with all available tools being registered."""
+
+        self._register_tool(
+            name="add_fact",
+            description="Add a new fact to remember.",
+            parameters=Fact.model_json_schema()
+        )
+
     def get_tools(self):
         return self._tools
     
