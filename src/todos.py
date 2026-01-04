@@ -40,7 +40,7 @@ class TodoStore:
         todos.append(new_todo.model_dump())
         self._save(todos)
         return new_todo
-
+    
     def get_all_todos(self) -> List[TodoItem]:
         return [TodoItem(**t) for t in self._load()]
 

@@ -5,6 +5,7 @@ import chromadb
 from chromadb.utils import embedding_functions
 import yaml
 from src.messages import Conversation, Message, Turn
+from pydantic import BaseModel
 
 
 def format_chat_history(chat_history: list):
@@ -27,6 +28,9 @@ def message_cache_format_to_prompt(message_history):
     chat_history = format_chat_history(chat_history)
     #print(f"\n{chat_history}")
     return chat_history
+
+
+
 
 
 class MemoryAdapter:

@@ -286,7 +286,7 @@ class ModuleIsoClient:
         model = "grok-4-1-fast-non-reasoning"
         response, messages, usage = self.iso_client.generate_response_with_tools(model=model, user_input=user_input)
         print(f"Response with Tools:\n{response}")
-        print(f"\nMessages:\n{messages}")
+        #print(f"\nMessages:\n{messages}")
         print(f"\nUsage:\n{usage}")
 
 # TODO: Files Handler Module
