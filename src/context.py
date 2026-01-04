@@ -30,9 +30,6 @@ def message_cache_format_to_prompt(message_history):
     return chat_history
 
 
-
-
-
 class MemoryAdapter:
     """
     Abstract interface for long-term memory backends. 

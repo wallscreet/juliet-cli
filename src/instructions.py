@@ -2,10 +2,7 @@ from dataclasses import asdict, dataclass
 import os
 from pathlib import Path
 import shutil
-from typing import Dict, List, Optional
 import yaml
-from datetime import datetime
-from string import Template
 
 
 @dataclass
@@ -113,85 +110,6 @@ class ModelInstructions:
         :returns: Prints a pre-defined config string to the terminal.
         """
         print(f"Iso Configuration:\n{self.to_dict()}")
-    
-    def to_prompt_script(self, 
-                         user_request: str, 
-                         facts_context: Optional[List[str]] = None, 
-                         mem_context: Optional[List[str]] = None, 
-                         knowledge_context: Optional[List[str]] = None, 
-                         chat_history: Optional[List[str]] = None, 
-                         workspace_contents: str = None
-    ) -> List[Dict[str, str]]:
-        """
-        Export instructions class as a prompt template.
-        """
-
-        facts_context_str = "\n".join(facts_context) if facts_context else "No related Facts found"
-        mem_context_str = "\n".join(mem_context) if mem_context else "No related memories"
-        knowledge_context_str = "\n".join(knowledge_context) if knowledge_context else "No related knowledge"
-        chat_history_str = "\n".join(chat_history) if chat_history else "No chat history"
-        current_time = datetime.now().strftime("%A, %B %d, %Y at %I:%M %p")  # Thursday, December 18, 2025 at 02:30 PM
-
-        messages = [
-            {"role": "system", "content": f"<system>>{self.system_message}</system>\n"},
-            {"role": "assistant", "content": f"\n<assistant>{self.assistant_intro}</assistant>\n"},
-            {"role": "user", "content": f"\n<focus>Your current focus should be: {self.assistant_focus}</focus>\n"},
-            {"role": "system", "content": f"\n<timestamp>The current date and time is:\n{current_time}</timestamp>\n"},
-            {"role": "system", "content": f"\n<workspace>Workspace directory contents:\n{workspace_contents}</workspace>\n"},
-            {"role": "system", "content": f"\n<facts>Facts from your Facts Table:\n{facts_context_str}</facts>\n"},
-            {"role": "system", "content": f"\n<memory>Request context from your memory:\n{mem_context_str}</memory>\n"},
-            {"role": "system", "content": f"\n<knowledge>Request context from your knowledge base:\n{knowledge_context_str}</knowledge>\n"},
-            {"role": "system", "content": f"\n<history>Conversation chat history:\n{chat_history_str}</history>\n"},
-            {"role": "user", "content": f"\n<user>User Request: {user_request}</user>\n"},
-            {"role": "assistant", "content": "<assistant>\n"},
-        ]
-
-        return messages
-
-    def to_prompt_script_md(self,
-                            user_request: str,
-                            facts_context: Optional[List[str]] = None,
-                            mem_context: Optional[List[str]] = None,
-                            knowledge_context: Optional[List[str]] = None,
-                            chat_history: Optional[List[str]] = None,
-                            workspace_contents: Optional[List[str]] = None,
-                            todos: Optional[List[str]] = None,
-    )-> List[Dict[str, str]]:
-        """
-        Create Markdown formatted instructions for the model
-        """
-
-        facts_context_str = "\n".join(facts_context) if facts_context else "No related Facts found"
-        mem_context_str = "\n".join(mem_context) if mem_context else "No related memories"
-        knowledge_context_str = "\n".join(knowledge_context) if knowledge_context else "No related knowledge"
-        chat_history_str = "\n".join(chat_history) if chat_history else "No chat history"
-        todos_str = ",\n".join(todos) if todos else "No TODOs"
-        workspace_contents_str = "\n".join(workspace_contents) if workspace_contents else "No content in your Workspace"
-        current_time = datetime.now().strftime("%A, %B %d, %Y at %I:%M %p")  # Thursday, December 18, 2025 at 02:30 PM
-        
-        with open("templates/prompt_template.md") as f:
-            t = Template(f.read())
-
-        content = t.substitute(
-                system_message=self.system_message,
-                assistant_intro=self.assistant_intro,
-                assistant_focus=self.assistant_focus,
-                current_time=current_time,
-                todos=todos_str,
-                workspace_contents=workspace_contents_str,
-                facts_context=facts_context_str,
-                mem_context=mem_context_str,
-                knowledge_context=knowledge_context_str,
-                chat_history=chat_history_str,
-        )
-
-        messages = [
-                {"role": "system", "content": f"{content}"},
-                {"role": "user", "content": f"{user_request}"},
-                {"role": "assistant", "content": "<assistant>"},
-        ]
-
-        return messages
 
     def update_model_instructions(self) -> None:
         """
@@ -237,4 +155,3 @@ class ModelInstructions:
         data = self.to_dict()
         with open(f"isos/{self.name.lower()}/instructions.yaml", "w") as f:
             yaml.safe_dump(data, f)
-            

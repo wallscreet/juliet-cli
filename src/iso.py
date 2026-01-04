@@ -84,50 +84,45 @@ class IsoClient:
         )
         
         return messages
-    
+
+
     def generate_response_with_tools(self, model: str, user_input: str):
-        # Instructions - Entry - str
         messages = self.build_prompt(user_input)
-        # Instructions - Output - List[dict]
-        # Toolbox - Entry
         tools = self.get_tools()
-        # Toolbox - Output
-        
+
         while True:
-            # LLM Client - Entry
             response, usage = self.llm_client.get_response_with_tools(model, messages, tools)
-            
+
+            # Append the assistant message with tool calls (if any)
+            messages.append({"role": "assistant", "content": response.content or "", "tool_calls": response.tool_calls})
+
             if not response.tool_calls:
                 return response.content, messages, usage
-            
-            messages.append(response)
-            
+
             for tool_call in response.tool_calls:
                 tool_name = tool_call.function.name
                 args = json.loads(tool_call.function.arguments)
-                
-                # Add Fact Tool
+
                 if tool_name == "add_fact":
                     fact = Fact(**args)
                     self.fact_store.append_fact(fact)
                     result = {"status": "fact_added", "fact": args}
-                
-                # Create Todo Tool
+
                 elif tool_name == "create_todo":
                     todo = self.todo_store.append_todo(description=args['description'])
-                    if todo:
-                        result = {"status": "todo_created", "todo": todo.model_dump()}
-                    else:
-                        result = {"status": "todo_exists", "description": args['description']}
-                
-                # List Active Todos Tool
+                    result = (
+                        {"status": "todo_created", "todo": todo.model_dump()}
+                        if todo else
+                        {"status": "todo_exists", "description": args['description']}
+                    )
+
                 elif tool_name == "list_active_todos":
                     todos = self.todo_store.filter_todos(completed=False)
                     result = {"status": "active_todos", "todos": [t.model_dump() for t in todos]}
 
                 else:
                     result = {"status": "unknown_tool", "tool": tool_name}
-                
+
                 messages.append({
                     "role": "tool",
                     "tool_call_id": tool_call.id,
