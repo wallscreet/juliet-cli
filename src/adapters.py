@@ -1,11 +1,21 @@
 from collections import OrderedDict, deque
-from src.instructions import ModelInstructions
-from typing import Dict, List, Optional
+from uuid import uuid4
+from instructions import ModelInstructions
 from datetime import datetime
-from string import Template
 
 
 class BaseContextAdapter:
+    """Base class for feed-forward context adapters (no Pydantic)."""
+
+    def __init__(self):
+        pass
+
+    def build_messages(self) -> list[dict[str, str]]:
+        """Return list of standard messages for pipeline."""
+        raise NotImplementedError
+
+
+class ChromaContextAdapter(BaseContextAdapter):
     """Base class for feed-forward context adapters (no Pydantic)."""
 
     def __init__(self, collection_name: str, chroma_path: str):
@@ -21,39 +31,45 @@ class BaseContextAdapter:
     def get_collection(self):
         return self.client.get_or_create_collection(name=self.collection_name)
 
-    def build_messages(self) -> list[dict[str, str]]:
-        """Return list of standard messages for pipeline."""
-        raise NotImplementedError
-
-    def ingest_if_needed(self):
-        """Optional: vectorize source data on first use."""
-        pass
+    def build_messages(self, user_request: str, top_k: int = 10, tag: str = None) -> list[dict[str, str]]:
+        if not user_request.strip():
+            return []
+        
+        results = self.get_collection().query(query_texts=[user_request], n_results=top_k)
+        passages = "\n".join(doc for doc in results["documents"][0] if doc)
+        if not passages:
+            return []
+        
+        tag_name = tag or self.collection_name
+        content = f"<{tag_name}>\n{passages}\n</{tag_name}>"
+        return [{"role": "system", "content": content}]
 
 
 class ContextPipeline:
-    def __init__(self, iso_name: str = "juliet"):
+    def __init__(self, iso_name: str = "juliet", user_name: str = "wallscreet"):
         self.instructions = ModelInstructions(method="load", assistant_name=iso_name)
         self.adapters = OrderedDict()
+        self.chroma_path = f"/isos/{iso_name.lower().strip()}/users/{user_name.lower().strip()}/chroma_db"
 
-        # ================================= #
-        # === Register Context Adapters === #
-        # ================================= #        
+        # === Register Context Adapters === #       
         # Timestamp
         self.register_adapter("timestamp", TimestampAdapter())
         # Workspace
         # TODO: Workspace adapter
         # Facts
-        # TODO: Fact Store adapter
-        # Knowledge Base (chroma)
-        # TODO: KB adapter
-        # Semantic Memory (chroma)
-        # TODO: Chroma Memory Adapter
+        self.register_adapter("facts", FactAdapter(self.chroma_path))
+        # Procedural Memory (chroma procedural memory)
+        #self.register_adapter("procedural", ProceduralMemoryAdapter(self.chroma_path))
+        # Semantic Memory (chroma knowledge base)
+        self.register_adapter("semantic", SemanticMemoryAdapter(self.chroma_path))
+        # Episodic Memory (chroma experiencial memory)
+        self.register_adapter("episodic", EpisodicMemoryAdapter(self.chroma_path))
         # Message Cache (chat history)
-        self.register_adapter("message_cache", MessageCacheAdapter(chroma_path="data/chroma"))
+        self.register_adapter("message_cache", MessageCacheAdapter(capacity=20))
         # User Request
         self.register_adapter("user_request", UserRequestAdapter(tag_name="user"))
         # Assistant Prefix
-        self.register_adapter("assistant_prefix", AssistantPrefixAdapter(prefix="<assistant>\n"))
+        self.register_adapter("assistant_prefix", AssistantPrefixAdapter(prefix="<assistant>"))
     
     def register_adapter(self, name: str, adapter: BaseContextAdapter):
         self.adapters[name] = adapter
@@ -70,17 +86,27 @@ class ContextPipeline:
                 messages.extend(adapter.build_messages(user_request=user_request))
             elif name == "assistant_prefix":
                 messages.append(adapter.build_messages()[0])
+            elif isinstance(adapter, ChromaContextAdapter):
+                messages.extend(adapter.build_messages(user_request))
             else:
                 messages.extend(adapter.build_messages())
         
         return messages
 
+def context_pipeline_test():
+    adapter = ContextPipeline()
+    print(adapter.build_messages(user_request="This is the context pipeline test message."))
 
 class TimestampAdapter(BaseContextAdapter):
     def build_messages(self) -> list[dict[str, str]]:
         current_time = datetime.now().strftime("%A, %B %d, %Y at %I:%M %p")
-        content = f"<timestamp>The current date and time is:\n{current_time}</timestamp>"
+        content = f"<timestamp>The current date and time is: {current_time}</timestamp>"
         return [{"role": "system", "content": content}]
+
+def timestamp_adapter_test():
+    time_adapter = TimestampAdapter()
+    timestamp = time_adapter.build_messages()
+    print(f"Timestamp: {timestamp}")
 
 
 class UserRequestAdapter(BaseContextAdapter):
@@ -94,16 +120,24 @@ class UserRequestAdapter(BaseContextAdapter):
         content = f"<{self.tag_name}>{user_request}</{self.tag_name}>"
         return [{"role": "user", "content": content}]
 
+def user_request_adapter_test():
+    adapter = UserRequestAdapter()
+    print(adapter.build_messages(user_request="This is a test message."))
+
 
 class AssistantPrefixAdapter(BaseContextAdapter):
     """
     Adapter that adds the forced assistant prefix.
     """
-    def __init__(self, prefix: str = "<assistant>\n"):
+    def __init__(self, prefix: str = "<assistant>"):
         self.prefix = prefix
 
     def build_messages(self) -> list[dict[str, str]]:
         return [{"role": "assistant", "content": self.prefix}]
+
+def asst_prefix_adapter_test():
+    adapter = AssistantPrefixAdapter()
+    print(adapter.build_messages())
 
 
 class MessageCacheAdapter(BaseContextAdapter):
@@ -113,7 +147,6 @@ class MessageCacheAdapter(BaseContextAdapter):
     capacity: int = 10
 
     def __init__(self, capacity: int = 20):
-        super().__init__(collection_name="message_cache")
         self.capacity = capacity
         self.cache = deque(maxlen=capacity)
 
@@ -132,85 +165,98 @@ class MessageCacheAdapter(BaseContextAdapter):
         content = "<history>\n" + "\n".join(history_lines) + "\n</history>"
         return [{"role": "system", "content": content}]
 
-
-# ================================================= #
-# ================================================= #
-def to_prompt_script(user_request: str, 
-                     facts_context: Optional[List[str]] = None, 
-                     mem_context: Optional[List[str]] = None, 
-                     knowledge_context: Optional[List[str]] = None, 
-                     chat_history: Optional[List[str]] = None, 
-                     workspace_contents: str = None,
-                     system_message: str = None,
-                     assistant_intro: str = None,
-                     assistant_focus: str = None
-) -> List[Dict[str, str]]:
-    """
-    Export instructions class as a prompt template.
-    """
-
-    facts_context_str = "\n".join(facts_context) if facts_context else "No related Facts found"
-    mem_context_str = "\n".join(mem_context) if mem_context else "No related memories"
-    knowledge_context_str = "\n".join(knowledge_context) if knowledge_context else "No related knowledge"
-    chat_history_str = "\n".join(chat_history) if chat_history else "No chat history"
-    current_time = datetime.now().strftime("%A, %B %d, %Y at %I:%M %p")  # Thursday, December 18, 2025 at 02:30 PM
-
-    messages = [
-        {"role": "system", "content": f"<system>>{system_message}</system>\n"},
-        {"role": "assistant", "content": f"\n<assistant>{assistant_intro}</assistant>\n"},
-        {"role": "user", "content": f"\n<focus>Your current focus should be: {assistant_focus}</focus>\n"},
-        {"role": "system", "content": f"\n<timestamp>The current date and time is:\n{current_time}</timestamp>\n"},
-        {"role": "system", "content": f"\n<workspace>Workspace directory contents:\n{workspace_contents}</workspace>\n"},
-        {"role": "system", "content": f"\n<facts>Facts from your Facts Table:\n{facts_context_str}</facts>\n"},
-        {"role": "system", "content": f"\n<memory>Request context from your memory:\n{mem_context_str}</memory>\n"},
-        {"role": "system", "content": f"\n<knowledge>Request context from your knowledge base:\n{knowledge_context_str}</knowledge>\n"},
-        {"role": "system", "content": f"\n<history>Conversation chat history:\n{chat_history_str}</history>\n"},
-        {"role": "user", "content": f"\n<user>User Request: {user_request}</user>\n"},
-        {"role": "assistant", "content": "<assistant>\n"},
-    ]
-
-    return messages
-
-def to_prompt_script_md(user_request: str,
-                        facts_context: Optional[List[str]] = None,
-                        mem_context: Optional[List[str]] = None,
-                        knowledge_context: Optional[List[str]] = None,
-                        chat_history: Optional[List[str]] = None,
-                        workspace_contents: Optional[List[str]] = None,
-                        todos: Optional[List[str]] = None,
-)-> List[Dict[str, str]]:
-    """
-    Create Markdown formatted instructions for the model
-    """
-
-    facts_context_str = "\n".join(facts_context) if facts_context else "No related Facts found"
-    mem_context_str = "\n".join(mem_context) if mem_context else "No related memories"
-    knowledge_context_str = "\n".join(knowledge_context) if knowledge_context else "No related knowledge"
-    chat_history_str = "\n".join(chat_history) if chat_history else "No chat history"
-    todos_str = ",\n".join(todos) if todos else "No TODOs"
-    workspace_contents_str = "\n".join(workspace_contents) if workspace_contents else "No content in your Workspace"
-    current_time = datetime.now().strftime("%A, %B %d, %Y at %I:%M %p")  # Thursday, December 18, 2025 at 02:30 PM
+def message_cache_adapter_test():
+    from messages import Message, Turn
+    from uuid import uuid4
+    adapter = MessageCacheAdapter()
     
-    with open("templates/prompt_template.md") as f:
-        t = Template(f.read())
-
-    content = t.substitute(
-            system_message=self.system_message,
-            assistant_intro=self.assistant_intro,
-            assistant_focus=self.assistant_focus,
-            current_time=current_time,
-            todos=todos_str,
-            workspace_contents=workspace_contents_str,
-            facts_context=facts_context_str,
-            mem_context=mem_context_str,
-            knowledge_context=knowledge_context_str,
-            chat_history=chat_history_str,
+    request_msg = Message(
+        uuid=uuid4(),
+        role="user",
+        speaker="Wallscreet",
+        content="Test user request message."
     )
+    response_msg = Message(
+        uuid=uuid4(),
+        role="assistant",
+        speaker="Juliet",
+        content="This is the test response to the user request test message."
+    )
+    
+    test_turn = Turn(
+        uuid=uuid4(),
+        conversation_id="12345",
+        request=request_msg,
+        response=response_msg
+    )
+    
+    adapter.add_turn(turn=test_turn)
+    
+    print(adapter.build_messages())
 
-    messages = [
-            {"role": "system", "content": f"{content}"},
-            {"role": "user", "content": f"{user_request}"},
-            {"role": "assistant", "content": "<assistant>"},
-    ]
 
-    return messages
+class EpisodicMemoryAdapter(ChromaContextAdapter):
+    def __init__(self, chroma_path: str):
+        super().__init__(collection_name="episodic", chroma_path=chroma_path)
+
+
+class SemanticMemoryAdapter(ChromaContextAdapter):
+    def __init__(self, chroma_path: str):
+        super().__init__(collection_name="semantic", chroma_path=chroma_path)
+
+
+class ProceduralMemoryAdapter(ChromaContextAdapter):
+    def __init__(self, chroma_path: str):
+        super().__init__(collection_name="procedural", chroma_path=chroma_path)
+
+
+class FactAdapter(ChromaContextAdapter):
+    """
+    Chroma-based fact retrieval adapter using SPO triples.
+    Stores facts as "subject | predicate | object" for better semantic search.
+    """
+    def __init__(self, chroma_path: str, collection_name: str = "facts"):
+        super().__init__(collection_name=collection_name, chroma_path=chroma_path)
+        from chromadb.utils import embedding_functions
+        self.embedding_fn = embedding_functions.SentenceTransformerEmbeddingFunction(
+            model_name="all-MiniLM-L6-v2"
+        )
+        self.collection = self.client.get_or_create_collection(
+            name=collection_name, embedding_function=self.embedding_fn
+        )
+
+    def append_fact(self, subject: str, predicate: str, object: str):
+        """Store a single SPO triple."""
+        triple = f"{subject.strip()} | {predicate.strip()} | {object.strip()}"
+        fact_id = str(uuid4())
+        self.collection.add(
+            documents=[triple],
+            ids=[fact_id],
+            metadatas=[{
+                "subject": subject,
+                "predicate": predicate,
+                "object": object,
+                "created_at": datetime.now().isoformat()
+            }]
+        )
+
+    def build_messages(self, user_request: str, top_k: int = 10) -> list[dict[str, str]]:
+        if not user_request.strip():
+            return []
+
+        results = self.collection.query(query_texts=[user_request], n_results=top_k)
+        facts = [doc for doc in results["documents"][0] if doc]
+
+        if not facts:
+            return []
+
+        content = "<facts>\n" + "\n".join(facts) + "\n</facts>"
+        return [{"role": "system", "content": content}]
+
+
+if __name__ == "__main__":
+    #timestamp_adapter_test()
+    #user_request_adapter_test()
+    #asst_prefix_adapter_test()
+    #message_cache_adapter_test()
+    context_pipeline_test()
