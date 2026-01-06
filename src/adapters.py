@@ -45,58 +45,6 @@ class ChromaContextAdapter(BaseContextAdapter):
         return [{"role": "system", "content": content}]
 
 
-class ContextPipeline:
-    def __init__(self, iso_name: str = "juliet", user_name: str = "wallscreet"):
-        self.instructions = ModelInstructions(method="load", assistant_name=iso_name)
-        self.adapters = OrderedDict()
-        self.chroma_path = f"/isos/{iso_name.lower().strip()}/users/{user_name.lower().strip()}/chroma_db"
-
-        # === Register Context Adapters === #       
-        # Timestamp
-        self.register_adapter("timestamp", TimestampAdapter())
-        # Workspace
-        # TODO: Workspace adapter
-        # Facts
-        self.register_adapter("facts", FactAdapter(self.chroma_path))
-        # Procedural Memory (chroma procedural memory)
-        #self.register_adapter("procedural", ProceduralMemoryAdapter(self.chroma_path))
-        # Semantic Memory (chroma knowledge base)
-        #self.register_adapter("semantic", SemanticMemoryAdapter(self.chroma_path))
-        # Episodic Memory (chroma experiencial memory)
-        #self.register_adapter("episodic", EpisodicMemoryAdapter(self.chroma_path))
-        # Message Cache (chat history)
-        self.register_adapter("message_cache", MessageCacheAdapter(capacity=20))
-        # User Request
-        self.register_adapter("user_request", UserRequestAdapter(tag_name="user"))
-        # Assistant Prefix
-        self.register_adapter("assistant_prefix", AssistantPrefixAdapter(prefix="<assistant>"))
-    
-    def register_adapter(self, name: str, adapter: BaseContextAdapter):
-        self.adapters[name] = adapter
-    
-    def build_messages(self, user_request: str) -> list[dict[str, str]]:
-        messages = [
-            {"role": "system", "content": f"<system>{self.instructions.system_message}</system>"},
-            {"role": "assistant", "content": f"<assistant_intro>{self.instructions.assistant_intro}</assistant_intro>"},
-            {"role": "system", "content": f"<focus>{self.instructions.assistant_focus}</focus>"},
-        ]
-        
-        for name, adapter in self.adapters.items():
-            if name == "user_request":
-                messages.extend(adapter.build_messages(user_request=user_request))
-            elif name == "assistant_prefix":
-                messages.append(adapter.build_messages()[0])
-            elif isinstance(adapter, ChromaContextAdapter):
-                messages.extend(adapter.build_messages(user_request))
-            else:
-                messages.extend(adapter.build_messages())
-        
-        return messages
-
-def context_pipeline_test():
-    adapter = ContextPipeline()
-    print(adapter.build_messages(user_request="This is the context pipeline test message."))
-
 class TimestampAdapter(BaseContextAdapter):
     def build_messages(self) -> list[dict[str, str]]:
         current_time = datetime.now().strftime("%A, %B %d, %Y at %I:%M %p")
@@ -252,6 +200,59 @@ class FactAdapter(ChromaContextAdapter):
 
         content = "<facts>\n" + "\n".join(facts) + "\n</facts>"
         return [{"role": "system", "content": content}]
+
+
+class ContextPipeline:
+    def __init__(self, iso_name: str = "juliet", user_name: str = "wallscreet"):
+        self.instructions = ModelInstructions(method="load", assistant_name=iso_name)
+        self.adapters = OrderedDict()
+        self.chroma_path = f"/isos/{iso_name.lower().strip()}/users/{user_name.lower().strip()}/chroma_db"
+
+        # === Register Context Adapters === #       
+        # Timestamp
+        self.register_adapter("timestamp", TimestampAdapter())
+        # Workspace
+        # TODO: Workspace adapter
+        # Facts
+        self.register_adapter("facts", FactAdapter(self.chroma_path))
+        # Procedural Memory (chroma procedural memory)
+        #self.register_adapter("procedural", ProceduralMemoryAdapter(self.chroma_path))
+        # Semantic Memory (chroma knowledge base)
+        #self.register_adapter("semantic", SemanticMemoryAdapter(self.chroma_path))
+        # Episodic Memory (chroma experiencial memory)
+        #self.register_adapter("episodic", EpisodicMemoryAdapter(self.chroma_path))
+        # Message Cache (chat history)
+        self.register_adapter("message_cache", MessageCacheAdapter(capacity=20))
+        # User Request
+        self.register_adapter("user_request", UserRequestAdapter(tag_name="user"))
+        # Assistant Prefix
+        self.register_adapter("assistant_prefix", AssistantPrefixAdapter(prefix="<assistant>"))
+    
+    def register_adapter(self, name: str, adapter: BaseContextAdapter):
+        self.adapters[name] = adapter
+    
+    def build_messages(self, user_request: str) -> list[dict[str, str]]:
+        messages = [
+            {"role": "system", "content": f"<system>{self.instructions.system_message}</system>"},
+            {"role": "assistant", "content": f"<assistant_intro>{self.instructions.assistant_intro}</assistant_intro>"},
+            {"role": "system", "content": f"<focus>{self.instructions.assistant_focus}</focus>"},
+        ]
+        
+        for name, adapter in self.adapters.items():
+            if name == "user_request":
+                messages.extend(adapter.build_messages(user_request=user_request))
+            elif name == "assistant_prefix":
+                messages.append(adapter.build_messages()[0])
+            elif isinstance(adapter, ChromaContextAdapter):
+                messages.extend(adapter.build_messages(user_request))
+            else:
+                messages.extend(adapter.build_messages())
+        
+        return messages
+
+def context_pipeline_test():
+    adapter = ContextPipeline()
+    print(adapter.build_messages(user_request="This is the context pipeline test message."))
 
 
 if __name__ == "__main__":
