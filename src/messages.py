@@ -3,12 +3,11 @@ from datetime import datetime
 from typing import List, Optional
 from uuid import uuid4
 from collections import deque
-import yaml
 
 
 @dataclass
 class Message:
-    uuid: str # The uuid may actually be arbitrary here
+    uuid: str
     role: str
     speaker: str
     content: str

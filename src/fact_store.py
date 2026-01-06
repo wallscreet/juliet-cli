@@ -4,7 +4,6 @@ from pydantic import BaseModel
 import yaml
 from typing import List
 import os
-from src.context import ChromaMemoryAdapter
 
 
 class Fact(BaseModel):

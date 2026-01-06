@@ -61,9 +61,9 @@ class ContextPipeline:
         # Procedural Memory (chroma procedural memory)
         #self.register_adapter("procedural", ProceduralMemoryAdapter(self.chroma_path))
         # Semantic Memory (chroma knowledge base)
-        self.register_adapter("semantic", SemanticMemoryAdapter(self.chroma_path))
+        #self.register_adapter("semantic", SemanticMemoryAdapter(self.chroma_path))
         # Episodic Memory (chroma experiencial memory)
-        self.register_adapter("episodic", EpisodicMemoryAdapter(self.chroma_path))
+        #self.register_adapter("episodic", EpisodicMemoryAdapter(self.chroma_path))
         # Message Cache (chat history)
         self.register_adapter("message_cache", MessageCacheAdapter(capacity=20))
         # User Request

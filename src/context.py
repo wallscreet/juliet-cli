@@ -5,7 +5,6 @@ import chromadb
 from chromadb.utils import embedding_functions
 import yaml
 from src.messages import Conversation, Message, Turn
-from pydantic import BaseModel
 
 
 def format_chat_history(chat_history: list):
@@ -30,10 +29,9 @@ def message_cache_format_to_prompt(message_history):
     return chat_history
 
 
-class MemoryAdapter:
+class MemoryStore:
     """
     Abstract interface for long-term memory backends. 
-    *Note: AI suggested on review, unsure of exact use yet, haha
     """
 
     def store_turn(self, conversation_id: str, turn: Turn):
@@ -43,10 +41,9 @@ class MemoryAdapter:
         raise NotImplementedError
 
 
-class ChromaMemoryAdapter(MemoryAdapter):
+class ChromaMemoryStore(MemoryStore):
     """
-    ChromaDB-based long-term memory.
-    Supports multiple collections like 'history', 'facts', 'summaries', etc.
+    ChromaDB manager class. Supports multiple collections for different memory types and purposes.
     """
 
     def __init__(self, 
@@ -120,7 +117,7 @@ class ChromaMemoryAdapter(MemoryAdapter):
         return messages
 
 
-class YamlMemoryAdapter(MemoryAdapter):
+class YamlMemoryAdapter(MemoryStore):
     def __init__(self, filepath: str):
         self.filepath = filepath
 
