@@ -51,7 +51,8 @@ class ChromaMemoryStore(MemoryStore):
                  embedding_model: str = "all-MiniLM-L6-v2"
     ):
     
-        self.client = chromadb.PersistentClient(path=persist_dir)
+        self.persist_dir = persist_dir
+        self.client = chromadb.PersistentClient(path=self.persist_dir)
         self.embedding_fn = embedding_functions.SentenceTransformerEmbeddingFunction(model_name=embedding_model)
         self.collections = {}
 
@@ -65,6 +66,33 @@ class ChromaMemoryStore(MemoryStore):
     def _delete_collection(self, name: str):
         self.client.delete_collection(name=name)
         print(f"Collection {name} has been deleted.")
+    
+    def _get_collection_stats(self, collection_name: str) -> dict:
+        from pathlib import Path
+        
+        coll = self._get_collection(collection_name)
+        
+        stats = {
+            "name": collection_name,
+            "count": coll.count(),
+        }
+
+        try:
+            # Access the internal collection UUID to find its folder
+            collection_id = "2ccd268f-1616-4d4b-b838-fa2317a70b37"
+            
+            coll_dir = Path(self.persist_dir) / str(collection_id)
+            
+            if coll_dir.exists():
+                size_bytes = sum(p.stat().st_size for p in coll_dir.rglob('*') if p.is_file())
+                stats["size_bytes"] = size_bytes
+                stats["size_mb"] = round(size_bytes / (1024 * 1024), 2)
+            else:
+                stats["size_note"] = "Collection directory not found"
+        except Exception as e:
+            stats["size_note"] = f"Size estimation failed: {str(e)}"
+
+        return stats
         
     def store_knowledge(self):
         pass
