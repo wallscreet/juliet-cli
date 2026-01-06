@@ -13,3 +13,4 @@ wheels/
 /isos/*/*/
 /workspace/
 /dev/
+/test_chroma_db/

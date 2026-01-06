@@ -44,6 +44,40 @@ class ChromaContextAdapter(BaseContextAdapter):
         content = f"<{tag_name}>\n{passages}\n</{tag_name}>"
         return [{"role": "system", "content": content}]
 
+def chroma_adapter_test():
+    adapter = ChromaContextAdapter(collection_name="test_collection", chroma_path="./test_chroma_db")
+    messages = adapter.build_messages(user_request="Who is the best dog?", top_k=5)
+    print(messages)
+
+def chroma_store_test():
+    from context import ChromaMemoryStore
+    from messages import Message, Turn
+    
+    store = ChromaMemoryStore(persist_dir="./test_chroma_db", embedding_model="all-MiniLM-L6-v2")
+    
+    request_msg = Message(
+        uuid=uuid4(),
+        role="user",
+        speaker="Wallscreet",
+        content="Kevin is the best dog in the world!"
+    )
+    
+    response_msg = Message(
+        uuid=uuid4(),
+        role="assistant",
+        speaker="Juliet",
+        content="Horatio is a good cat."
+    )
+    
+    test_turn = Turn(
+        uuid=uuid4(),
+        conversation_id="12345",
+        request=request_msg,
+        response=response_msg
+    )
+    
+    store.store_turn(conversation_id="12345", turn=test_turn, collection_name="test_collection")
+    print("Stored test turn in Chroma collection.")
 
 class TimestampAdapter(BaseContextAdapter):
     def build_messages(self) -> list[dict[str, str]]:
@@ -260,4 +294,6 @@ if __name__ == "__main__":
     #user_request_adapter_test()
     #asst_prefix_adapter_test()
     #message_cache_adapter_test()
-    context_pipeline_test()
+    #context_pipeline_test()
+    chroma_adapter_test()
+    #chroma_store_test()

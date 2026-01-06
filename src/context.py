@@ -4,7 +4,7 @@ from uuid import uuid4
 import chromadb
 from chromadb.utils import embedding_functions
 import yaml
-from src.messages import Conversation, Message, Turn
+from messages import Conversation, Message, Turn
 
 
 def format_chat_history(chat_history: list):
