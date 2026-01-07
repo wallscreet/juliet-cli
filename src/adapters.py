@@ -36,14 +36,14 @@ class ChromaContextAdapter(BaseContextAdapter):
                        user_request: str, 
                        top_k: int = 5, 
                        tag: str = None, 
-                       max_overfetch: int = 20, 
-                       min_similarity: float = 0.45, 
-                       dynamic_multiplier: float = 2.0
+                       max_overfetch: int = 30, 
+                       min_similarity: float = 0.35, 
+                       dynamic_multiplier: float = 4.0
     ) -> list[dict[str, str]]:
         if not user_request.strip():
             return []
 
-        fetch_k = min(top_k * 3, max_overfetch)
+        fetch_k = min(top_k * 4, max_overfetch)
 
         results = self.get_collection().query(
             query_texts=[user_request],
@@ -74,7 +74,6 @@ class ChromaContextAdapter(BaseContextAdapter):
             # Get source filename for use as XML tag
             source_file = meta.get("source_file", "unknown")
             # Clean filename
-            
             clean_tag = re.sub(r'\.[^.]+$', '', source_file)
             clean_tag = re.sub(r'[^a-zA-Z0-9_-]', '_', clean_tag)
             clean_tag = re.sub(r'_+', '_', clean_tag).strip('_')
@@ -237,7 +236,7 @@ class ContextPipeline:
         # Assistant Prefix
         self.register_adapter("assistant_prefix", AssistantPrefixAdapter(prefix="<assistant>"))
     
-    def register_adapter(self, name: str, adapter: BaseContextAdapter):
+    def register_adapter(self, name: str, adapter):
         self.adapters[name] = adapter
     
     def build_messages(self, user_request: str) -> list[dict[str, str]]:
@@ -326,9 +325,11 @@ def semantic_extraction_test():
     from context import ChromaMemoryStore
     store = ChromaMemoryStore(persist_dir="./test_chroma_db")
     filepath = input("Enter file path to ingest: ")
+    author = input("Enter the author's name: ")
     results = store.store_knowledge_from_file(
         file_path=filepath,
-        author="Google",
+        author=author,
+        json_export_path="./test_chroma_db/semantic_memory.json"
     )
     print(results)
 

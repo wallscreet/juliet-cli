@@ -4,9 +4,11 @@ from typing import List, Optional
 from uuid import uuid4
 import chromadb
 from chromadb.utils import embedding_functions
+from chromadb.utils.batch_utils import create_batches
 import yaml
 from messages import Conversation, Message, Turn
 from extract_docs import chunk_text, extract_text
+import json
 
 
 def format_chat_history(chat_history: list):
@@ -60,9 +62,20 @@ class ChromaMemoryStore(MemoryStore):
 
     def _get_collection(self, name: str):
         if name not in self.collections:
-            self.collections[name] = self.client.get_or_create_collection(
-                name=name, embedding_function=self.embedding_fn
-            )
+            try:
+                coll = self.client.get_collection(name=name)
+                print(f"Loaded existing collection '{name}'")
+            except Exception as e:
+                # If collection doesn't exist create it with embedding function
+                if "not found" in str(e).lower() or isinstance(e, chromadb.errors.NotFoundError):
+                    print(f"Collection '{name}' not found. Creating new one...")
+                    coll = self.client.create_collection(
+                        name=name,
+                        embedding_function=self.embedding_fn
+                    )
+                else:
+                    raise e
+            self.collections[name] = coll
         return self.collections[name]
     
     def _delete_collection(self, name: str):
@@ -95,18 +108,19 @@ class ChromaMemoryStore(MemoryStore):
             stats["size_note"] = f"Size estimation failed: {str(e)}"
 
         return stats
-        
+
     def store_knowledge_from_file(
         self,
         file_path: str,
         author: Optional[str] = None,
         collection_name: str = "semantic",
         chunk_size: int = 1536,
-        overlap: int = 256
+        overlap: int = 256,
+        json_export_path: Optional[str] = None
     ) -> dict:
         """
-        Ingest a single supported file (.pdf, .txt, .epub) into semantic memory.
-        Uses your custom extract_text() and chunk_text().
+        Ingest a single supported file into Chroma with proper batching.
+        Optionally appends each chunk as a JSON line to a file for inspection/debugging if json_export_path is provided.
         """
         file_path = Path(file_path).resolve()
         if not file_path.exists():
@@ -133,6 +147,7 @@ class ChromaMemoryStore(MemoryStore):
         docs = []
         ids = []
         metadatas = []
+        json_records = []
 
         ingested_at = datetime.now().isoformat()
 
@@ -140,6 +155,8 @@ class ChromaMemoryStore(MemoryStore):
             if not chunk.strip():
                 continue
             chunk_id = str(uuid4())
+            text = chunk.strip()
+
             metadata = {
                 "source_file": source_name,
                 "source_path": str(file_path),
@@ -151,85 +168,56 @@ class ChromaMemoryStore(MemoryStore):
             if author:
                 metadata["author"] = author
 
-            docs.append(chunk.strip())
+            docs.append(text)
             ids.append(chunk_id)
             metadatas.append(metadata)
 
-        collection = self._get_collection(collection_name)
-        collection.add(
-            documents=docs,
-            ids=ids,
-            metadatas=metadatas
-        )
+            record = {
+                "id": chunk_id,
+                "text": text,
+                "metadata": metadata
+            }
+            json_records.append(record)
 
-        print(f"Stored {len(docs)} chunks from {source_name} → collection '{collection_name}'")
+        collection = self._get_collection(collection_name)
+        max_batch_size = self.client.get_max_batch_size()
+        print(f"Storing {len(docs)} chunks in batches of ≤{max_batch_size}...")
+
+        for batch_ids, _, batch_metadatas, batch_documents in create_batches(
+            api=self.client,
+            ids=ids,
+            metadatas=metadatas,
+            documents=docs,
+        ):
+            collection.add(
+                ids=batch_ids,
+                documents=batch_documents,
+                metadatas=batch_metadatas,
+            )
+
+        # Append to JSON Lines file
+        if json_export_path:
+            json_path = Path(json_export_path)
+            json_path.parent.mkdir(parents=True, exist_ok=True)
+
+            with json_path.open("a", encoding="utf-8") as f:
+                for record in json_records:
+                    json.dump(record, f, ensure_ascii=False)
+                    f.write("\n")
+
+            print(f"Appended {len(json_records)} records to {json_path}")
+
+        print(f"Successfully stored {len(docs)} chunks from {source_name} → '{collection_name}'")
 
         return {
             "status": "success",
             "file": source_name,
             "chunks_stored": len(docs),
             "collection": collection_name,
-            "preview": docs[0][:300] + "..." if docs else None
+            "preview": docs[0][:300] + "..." if docs else None,
+            "json_exported": len(json_records) if json_export_path else 0
         }
-
-    def store_knowledge_from_directory(
-        self,
-        dir_path: str,
-        author: Optional[str] = None,
-        collection_name: str = "semantic",
-        chunk_size: int = 1000,
-        overlap: int = 200,
-        exclude_patterns: Optional[List[str]] = None,
-        clear_collection: bool = False
-    ) -> dict:
-        """
-        Ingest all supported files in a directory (recursive).
-        Mirrors your ingest_dir() logic but integrates with existing client.
-        """
-        dir_path = Path(dir_path).resolve()
-        if not dir_path.is_dir():
-            raise ValueError(f"Not a directory: {dir_path}")
-
-        if exclude_patterns is None:
-            exclude_patterns = []
-
-        if clear_collection:
-            self.client.delete_collection(collection_name)
-            print(f"Cleared collection '{collection_name}'")
-
-        total_chunks = 0
-        ingested_files = []
-
-        for file_path in dir_path.rglob("*"):
-            if not file_path.is_file():
-                continue
-            if any(pat in file_path.name for pat in exclude_patterns):
-                print(f"Skipped (excluded): {file_path.name}")
-                continue
-            if file_path.suffix.lower() not in {".pdf", ".txt", ".epub"}:
-                continue
-
-            try:
-                result = self.store_knowledge_from_file(
-                    file_path=str(file_path),
-                    author=author,
-                    collection_name=collection_name,
-                    chunk_size=chunk_size,
-                    overlap=overlap
-                )
-                if result["status"] == "success":
-                    total_chunks += result["chunks_stored"]
-                    ingested_files.append(result["file"])
-            except Exception as e:
-                print(f"Failed to ingest {file_path.name}: {e}")
-
-        return {
-            "status": "complete",
-            "directory": str(dir_path),
-            "files_ingested": len(ingested_files),
-            "total_chunks": total_chunks,
-            "files": ingested_files
-        }
+    
 
     def store_turn(self, conversation_id: str, turn: Turn, collection_name: str = "memory"):
         """
