@@ -1,10 +1,12 @@
 from datetime import datetime
+from pathlib import Path
 from typing import List, Optional
 from uuid import uuid4
 import chromadb
 from chromadb.utils import embedding_functions
 import yaml
 from messages import Conversation, Message, Turn
+from extract_docs import chunk_text, extract_text
 
 
 def format_chat_history(chat_history: list):
@@ -80,6 +82,7 @@ class ChromaMemoryStore(MemoryStore):
         try:
             # Access the internal collection UUID to find its folder
             collection_id = "2ccd268f-1616-4d4b-b838-fa2317a70b37"
+            #collection_id = "90c45b81-d71d-44db-8965-7cabe9efafe1"
             
             coll_dir = Path(self.persist_dir) / str(collection_id)
             
@@ -94,8 +97,142 @@ class ChromaMemoryStore(MemoryStore):
 
         return stats
         
-    def store_knowledge(self):
-        pass
+    def store_knowledge_from_file(
+        self,
+        file_path: str,
+        author: Optional[str] = None,
+        collection_name: str = "semantic",
+        chunk_size: int = 1536,
+        overlap: int = 256
+    ) -> dict:
+        """
+        Ingest a single supported file (.pdf, .txt, .epub) into semantic memory.
+        Uses your custom extract_text() and chunk_text().
+        """
+        file_path = Path(file_path).resolve()
+        if not file_path.exists():
+            raise FileNotFoundError(f"File not found: {file_path}")
+
+        source_name = file_path.name
+        file_type = file_path.suffix.lower()
+
+        print(f"Extracting text from {source_name}...")
+        try:
+            raw_text = extract_text(str(file_path))
+        except Exception as e:
+            raise IOError(f"Failed to extract text from {source_name}: {e}")
+
+        if not raw_text.strip():
+            return {"status": "empty", "file": source_name, "chunks": 0}
+
+        print(f"Chunking {len(raw_text):,} characters (size={chunk_size}, overlap={overlap})...")
+        chunks = chunk_text(raw_text, chunk_size=chunk_size, overlap=overlap)
+
+        if not chunks:
+            return {"status": "no_chunks", "file": source_name, "chunks": 0}
+
+        # Prepare for Chroma
+        docs = []
+        ids = []
+        metadatas = []
+
+        ingested_at = datetime.now().isoformat()
+
+        for i, chunk in enumerate(chunks):
+            if not chunk.strip():
+                continue
+            chunk_id = str(uuid4())
+            metadata = {
+                "source_file": source_name,
+                "source_path": str(file_path),
+                "file_type": file_type,
+                "chunk_index": i,
+                "total_chunks": len(chunks),
+                "ingested_at": ingested_at,
+            }
+            if author:
+                metadata["author"] = author
+
+            docs.append(chunk.strip())
+            ids.append(chunk_id)
+            metadatas.append(metadata)
+
+        # Store
+        collection = self._get_collection(collection_name)
+        collection.add(
+            documents=docs,
+            ids=ids,
+            metadatas=metadatas
+        )
+
+        print(f"Stored {len(docs)} chunks from {source_name} → collection '{collection_name}'")
+
+        return {
+            "status": "success",
+            "file": source_name,
+            "chunks_stored": len(docs),
+            "collection": collection_name,
+            "preview": docs[0][:300] + "..." if docs else None
+        }
+
+    def store_knowledge_from_directory(
+        self,
+        dir_path: str,
+        author: Optional[str] = None,
+        collection_name: str = "semantic",
+        chunk_size: int = 1000,
+        overlap: int = 200,
+        exclude_patterns: Optional[List[str]] = None,
+        clear_collection: bool = False
+    ) -> dict:
+        """
+        Ingest all supported files in a directory (recursive).
+        Mirrors your ingest_dir() logic but integrates with existing client.
+        """
+        dir_path = Path(dir_path).resolve()
+        if not dir_path.is_dir():
+            raise ValueError(f"Not a directory: {dir_path}")
+
+        if exclude_patterns is None:
+            exclude_patterns = []
+
+        if clear_collection:
+            self.client.delete_collection(collection_name)
+            print(f"Cleared collection '{collection_name}'")
+
+        total_chunks = 0
+        ingested_files = []
+
+        for file_path in dir_path.rglob("*"):
+            if not file_path.is_file():
+                continue
+            if any(pat in file_path.name for pat in exclude_patterns):
+                print(f"Skipped (excluded): {file_path.name}")
+                continue
+            if file_path.suffix.lower() not in {".pdf", ".txt", ".epub"}:
+                continue
+
+            try:
+                result = self.store_knowledge_from_file(
+                    file_path=str(file_path),
+                    author=author,
+                    collection_name=collection_name,
+                    chunk_size=chunk_size,
+                    overlap=overlap
+                )
+                if result["status"] == "success":
+                    total_chunks += result["chunks_stored"]
+                    ingested_files.append(result["file"])
+            except Exception as e:
+                print(f"Failed to ingest {file_path.name}: {e}")
+
+        return {
+            "status": "complete",
+            "directory": str(dir_path),
+            "files_ingested": len(ingested_files),
+            "total_chunks": total_chunks,
+            "files": ingested_files
+        }
 
     def store_turn(self, conversation_id: str, turn: Turn, collection_name: str = "memory"):
         """

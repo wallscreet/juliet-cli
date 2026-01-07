@@ -228,10 +228,16 @@ def episodic_adapter_test():
     messages = adapter.build_messages(user_request=request)
     print(messages)
 
+def semantic_adapter_test():
+    adapter = SemanticMemoryAdapter(chroma_path="./test_chroma_db")
+    request = input("Query: ")
+    messages = adapter.build_messages(user_request=request)
+    print(messages)
+
 def chroma_get_collection_stats():
     from context import ChromaMemoryStore
     store = ChromaMemoryStore(persist_dir="./test_chroma_db")
-    coll = "test_collection"
+    coll = "semantic"
     stats = store._get_collection_stats(collection_name=coll)
     print(stats)
 
@@ -264,6 +270,16 @@ def chroma_store_test():
     
     store.store_turn(conversation_id="12345", turn=test_turn, collection_name="test_collection")
     print("Stored test turn in Chroma collection.")
+
+def semantic_extraction_test():
+    from context import ChromaMemoryStore
+    store = ChromaMemoryStore(persist_dir="./test_chroma_db")
+    filepath = input("Enter file path to ingest: ")
+    results = store.store_knowledge_from_file(
+        file_path=filepath,
+        author="Google",
+    )
+    print(results)
 
 def context_pipeline_test():
     adapter = ContextPipeline()
@@ -306,6 +322,12 @@ def user_request_adapter_test():
     adapter = UserRequestAdapter()
     print(adapter.build_messages(user_request="This is a test message."))
 
+def chroma_delete_collection():
+    from context import ChromaMemoryStore
+    store = ChromaMemoryStore(persist_dir="./test_chroma_db")
+    coll_name = input("Enter collection name to delete: ")
+    store._delete_collection(name=coll_name)
+
 # ====================================== #
 # =========== TESTS LOOP =============== #
 
@@ -318,4 +340,7 @@ if __name__ == "__main__":
     #chroma_adapter_test()
     #chroma_store_test()
     #chroma_get_collection_stats()
-    episodic_adapter_test()
+    #episodic_adapter_test()
+    #semantic_extraction_test()
+    semantic_adapter_test()
+    #chroma_delete_collection()
