@@ -80,9 +80,8 @@ class ChromaMemoryStore(MemoryStore):
         }
 
         try:
-            # Access the internal collection UUID to find its folder
-            collection_id = "2ccd268f-1616-4d4b-b838-fa2317a70b37"
-            #collection_id = "90c45b81-d71d-44db-8965-7cabe9efafe1"
+            collection_id = "uuid"
+            #collection_id = "uuid"
             
             coll_dir = Path(self.persist_dir) / str(collection_id)
             
@@ -131,7 +130,6 @@ class ChromaMemoryStore(MemoryStore):
         if not chunks:
             return {"status": "no_chunks", "file": source_name, "chunks": 0}
 
-        # Prepare for Chroma
         docs = []
         ids = []
         metadatas = []
@@ -157,7 +155,6 @@ class ChromaMemoryStore(MemoryStore):
             ids.append(chunk_id)
             metadatas.append(metadata)
 
-        # Store
         collection = self._get_collection(collection_name)
         collection.add(
             documents=docs,

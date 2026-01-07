@@ -2,6 +2,7 @@ from collections import OrderedDict, deque
 from uuid import uuid4
 from instructions import ModelInstructions
 from datetime import datetime
+import re
 
 
 class BaseContextAdapter:
@@ -31,17 +32,67 @@ class ChromaContextAdapter(BaseContextAdapter):
     def get_collection(self):
         return self.client.get_or_create_collection(name=self.collection_name)
 
-    def build_messages(self, user_request: str, top_k: int = 10, tag: str = None) -> list[dict[str, str]]:
+    def build_messages(self, 
+                       user_request: str, 
+                       top_k: int = 5, 
+                       tag: str = None, 
+                       max_overfetch: int = 20, 
+                       min_similarity: float = 0.45, 
+                       dynamic_multiplier: float = 2.0
+    ) -> list[dict[str, str]]:
         if not user_request.strip():
             return []
-        
-        results = self.get_collection().query(query_texts=[user_request], n_results=top_k)
-        passages = "\n".join(doc for doc in results["documents"][0] if doc)
-        if not passages:
+
+        fetch_k = min(top_k * 3, max_overfetch)
+
+        results = self.get_collection().query(
+            query_texts=[user_request],
+            n_results=fetch_k,
+            include=["documents", "distances", "metadatas"]
+        )
+
+        docs = results["documents"][0]
+        distances = results["distances"][0]
+        metadatas = results["metadatas"][0]
+
+        if not docs:
             return []
-        
-        tag_name = tag or self.collection_name
-        content = f"<{tag_name}>\n{passages}\n</{tag_name}>"
+
+        best_distance = min(distances)
+        threshold_distance = min(best_distance * dynamic_multiplier, 1.0 - min_similarity)
+
+        # individually tagged chunks
+        tagged_chunks = []
+        for doc, dist, meta in zip(docs, distances, metadatas):
+            if not doc or not doc.strip():
+                continue
+            if dist > threshold_distance:
+                continue
+
+            text = doc.strip()
+
+            # Get source filename for use as XML tag
+            source_file = meta.get("source_file", "unknown")
+            # Clean filename
+            
+            clean_tag = re.sub(r'\.[^.]+$', '', source_file)
+            clean_tag = re.sub(r'[^a-zA-Z0-9_-]', '_', clean_tag)
+            clean_tag = re.sub(r'_+', '_', clean_tag).strip('_')
+            
+            if not clean_tag:
+                clean_tag = "unknown_source"
+
+            tagged = f"<{clean_tag}>{text}</{clean_tag}>"
+            tagged_chunks.append(tagged)
+
+        selected_chunks = tagged_chunks[:top_k]
+
+        if not selected_chunks:
+            return []
+
+        outer_tag = tag or self.collection_name
+        content = f"<{outer_tag}>\n" + "\n\n".join(selected_chunks) + f"\n</{outer_tag}>"
+
         return [{"role": "system", "content": content}]
 
 
