@@ -1,5 +1,7 @@
+from src.adapters import ContextPipeline
 from src.clients import LLMClient,XAIClient, OllamaClient
 from typing import List
+from src.context import ChromaMemoryStore
 from src.instructions import ModelInstructions
 from src.todos import TodoStore
 from src.fact_store import FactStore
@@ -291,6 +293,45 @@ class ModuleIsoClient:
 
 # TODO: Files Handler Module
 
+# TODO: Adapters-Context Pipeline Module
+class ModuleContextPipeline:
+    
+    def __init__(self):
+        self.chroma_dir = "isos/juliet/users/wallscreet/chroma_store"
+        self.iso_name = "juliet"
+        self.user_name = "wallscreet"
+        self.chroma_store = ChromaMemoryStore(persist_dir=self.chroma_dir)
+        self.pipeline = ContextPipeline(chroma_store=self.chroma_store, iso_name=self.iso_name, user_name=self.user_name)
+        self.llm_client = XAIClient()
+        
+        self.options = [
+            ("1", "Build Messages", self.build_messages),
+            ("2", "Get Response", self.get_response),
+        ]
+        
+    def option_select(self):
+        print("\nSelect an Option:")
+        for key, desc, _ in self.options:
+            print(f"{key}: {desc}")
+        choice = input("> ").strip()
+        for key, _, func in self.options:
+            if choice == key:
+                func()
+                return
+        print("Invalid option")
+    
+    def build_messages(self):
+        user_request = input("User Request: ")
+        messages = self.pipeline.build_messages(user_request=user_request)
+        print(f"Prompt Messages:\n{messages}")
+        
+    def get_response(self):
+        user_request = input("User Request: ")
+        messages = self.pipeline.build_messages(user_request=user_request)
+        response = self.llm_client.get_response(model="grok-4-1-fast-non-reasoning", messages=messages)
+        print(f"LLM Response:\n{response}")
+
+
 # ===================== #
 # ===== MAIN LOOP ===== #
 # ===================== #
@@ -304,6 +345,7 @@ if __name__ == "__main__":
         ("4", "Todo Store", ModuleTodos),
         ("5", "Fact Store", ModuleFacts),
         ("6", "Iso Client", ModuleIsoClient),
+        ("7", "Context Pipeline", ModuleContextPipeline),
         # Add more: ("n", "Next Module", NextModuleClass),
     ]
 

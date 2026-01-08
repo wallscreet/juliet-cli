@@ -6,8 +6,8 @@ import chromadb
 from chromadb.utils import embedding_functions
 from chromadb.utils.batch_utils import create_batches
 import yaml
-from messages import Conversation, Message, Turn
-from extract_docs import chunk_text, extract_text
+from src.messages import Conversation, Message, Turn
+from src.extract_docs import chunk_text, extract_text
 import json
 
 

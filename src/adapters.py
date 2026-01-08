@@ -1,10 +1,11 @@
 from collections import OrderedDict, deque
 from uuid import uuid4
-from instructions import ModelInstructions
+from src.instructions import ModelInstructions
 from datetime import datetime
 import re
 from typing import List, Dict
-from context import ChromaMemoryStore
+from src.context import ChromaMemoryStore
+from src.messages import Message, Turn
 
 
 class BaseContextAdapter:
@@ -219,13 +220,55 @@ class ContextPipeline:
         return messages
 
 
+def chroma_store_test(chroma_store: ChromaMemoryStore):
+    conversation_id = "12345"
+    
+    request_msg = Message(
+        uuid=uuid4(),
+        role="user",
+        speaker="Wallscreet",
+        content="Morgan is playing my guitar right now."
+    )
+    
+    response_msg = Message(
+        uuid=uuid4(),
+        role="assistant",
+        speaker="Juliet",
+        content="That sounds like fun, what is she playing?"
+    )
+    
+    test_turn = Turn(
+        uuid=uuid4(),
+        conversation_id=conversation_id,
+        request=request_msg,
+        response=response_msg
+    )
+    
+    chroma_store.store_turn(conversation_id=conversation_id, 
+                     turn=test_turn, 
+                     collection_name="episodic",
+                     json_export_path="isos/juliet/users/wallscreet/episodic_memory.json"
+    )
+    
+    print("Stored test turn in Chroma collection.")
+
+
 if __name__ == "__main__":
+    #== init
     chroma_dir = "isos/juliet/users/wallscreet/chroma_store"
     iso_name = "juliet"
     user_name = "wallscreet"
     chroma_store = ChromaMemoryStore(persist_dir=chroma_dir)
     pipeline = ContextPipeline(chroma_store=chroma_store, iso_name=iso_name, user_name=user_name)
-    user_request = input("Enter User Request: ")
-    messages = pipeline.build_messages(user_request=user_request)
-    print(messages)
     
+    #== Get User Request
+    #user_request = input("Enter User Request: ")
+    
+    #== Build Messages
+    #messages = pipeline.build_messages(user_request=user_request)
+    #print(messages)
+    
+    #== Get Response
+    
+    #== Store Messages->Turn => chromadb + episodic json
+    chroma_store_test(chroma_store=chroma_store)
