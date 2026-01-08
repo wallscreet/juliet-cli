@@ -3,13 +3,13 @@ from uuid import uuid4
 from instructions import ModelInstructions
 from datetime import datetime
 import re
+from typing import List, Dict
+from context import ChromaMemoryStore
 
 
 class BaseContextAdapter:
     """Base class for feed-forward context adapters (no Pydantic)."""
-
-    def __init__(self):
-        pass
+    requires_user_request: bool = False
 
     def build_messages(self) -> list[dict[str, str]]:
         """Return list of standard messages for pipeline."""
@@ -19,25 +19,26 @@ class BaseContextAdapter:
 class ChromaContextAdapter(BaseContextAdapter):
     """Base class for feed-forward context adapters (no Pydantic)."""
 
-    def __init__(self, collection_name: str, chroma_path: str):
+    def __init__(self, 
+                 collection_name: str, 
+                 chroma_store: ChromaMemoryStore, 
+                 tagging_mode: str = "source_file"
+    ):
+        
+        self.requires_user_request = True
         self.collection_name = collection_name
-        self.chroma_path = chroma_path
-        self.client = None
-        self._init_client()
-
-    def _init_client(self):
-        import chromadb
-        self.client = chromadb.PersistentClient(path=self.chroma_path)
+        self.client = chroma_store
+        self.tagging_mode = tagging_mode
 
     def get_collection(self):
-        return self.client.get_or_create_collection(name=self.collection_name)
+        return self.client.client.get_or_create_collection(name=self.collection_name)
 
     def build_messages(self, 
                        user_request: str, 
                        top_k: int = 5, 
                        tag: str = None, 
                        max_overfetch: int = 30, 
-                       min_similarity: float = 0.35, 
+                       min_similarity: float = 0.15, 
                        dynamic_multiplier: float = 4.0
     ) -> list[dict[str, str]]:
         if not user_request.strip():
@@ -58,33 +59,40 @@ class ChromaContextAdapter(BaseContextAdapter):
         if not docs:
             return []
 
-        best_distance = min(distances)
-        threshold_distance = min(best_distance * dynamic_multiplier, 1.0 - min_similarity)
+        similarities = [1.0 - dist for dist in distances]
+        best_similarity = max(similarities)
+        dynamic_threshold = best_similarity / dynamic_multiplier
+        threshold = max(dynamic_threshold, min_similarity)
 
-        # individually tagged chunks
         tagged_chunks = []
-        for doc, dist, meta in zip(docs, distances, metadatas):
+        for doc, sim, meta in zip(docs, similarities, metadatas):
             if not doc or not doc.strip():
                 continue
-            if dist > threshold_distance:
+            if sim < threshold:
                 continue
 
             text = doc.strip()
 
-            # Get source filename for use as XML tag
-            source_file = meta.get("source_file", "unknown")
-            # Clean filename
-            clean_tag = re.sub(r'\.[^.]+$', '', source_file)
-            clean_tag = re.sub(r'[^a-zA-Z0-9_-]', '_', clean_tag)
-            clean_tag = re.sub(r'_+', '_', clean_tag).strip('_')
-            
-            if not clean_tag:
-                clean_tag = "unknown_source"
+            # inner tagging based on mode
+            if self.tagging_mode == "source_file" and "source_file" in meta:
+                source_file = meta["source_file"]
+                clean_tag = re.sub(r'\.[^.]+$', '', source_file)
+                clean_tag = re.sub(r'[^a-zA-Z0-9_-]', '_', clean_tag)
+                clean_tag = re.sub(r'_+', '_', clean_tag).strip('_')
+                if not clean_tag:
+                    clean_tag = "unknown"
+                tagged_text = f"<{clean_tag}>{text}</{clean_tag}>"
+            elif self.tagging_mode == "simple" and "role" in meta:
+                role = meta["role"]
+                tagged_text = f"<{role}>{text}</{role}>"
+            else:
+                tagged_text = text
 
-            tagged = f"<{clean_tag}>{text}</{clean_tag}>"
-            tagged_chunks.append(tagged)
+            tagged_chunks.append((sim, tagged_text))
 
-        selected_chunks = tagged_chunks[:top_k]
+        # Sort by relevance and return top_k
+        tagged_chunks.sort(key=lambda x: x[0], reverse=True)
+        selected_chunks = [chunk for _, chunk in tagged_chunks[:top_k]]
 
         if not selected_chunks:
             return []
@@ -96,18 +104,18 @@ class ChromaContextAdapter(BaseContextAdapter):
 
 
 class EpisodicMemoryAdapter(ChromaContextAdapter):
-    def __init__(self, chroma_path: str):
-        super().__init__(collection_name="episodic", chroma_path=chroma_path)
+    def __init__(self, chroma_store: ChromaMemoryStore):
+        super().__init__(collection_name="episodic", tagging_mode="simple", chroma_store=chroma_store)
 
 
 class SemanticMemoryAdapter(ChromaContextAdapter):
-    def __init__(self, chroma_path: str):
-        super().__init__(collection_name="semantic", chroma_path=chroma_path)
+    def __init__(self, chroma_store: ChromaMemoryStore):
+        super().__init__(collection_name="semantic", tagging_mode="source_file", chroma_store=chroma_store)
 
 
 class ProceduralMemoryAdapter(ChromaContextAdapter):
-    def __init__(self, chroma_path: str):
-        super().__init__(collection_name="procedural", chroma_path=chroma_path)
+    def __init__(self, chroma_store: ChromaMemoryStore):
+        super().__init__(collection_name="procedural", tagging_mode="none", chroma_store=chroma_store)
 
 
 class TimestampAdapter(BaseContextAdapter):
@@ -123,6 +131,7 @@ class UserRequestAdapter(BaseContextAdapter):
     """
     def __init__(self, tag_name: str = "user"):
         self.tag_name = tag_name
+        self.requires_user_request = True
 
     def build_messages(self, user_request: str) -> list[dict[str, str]]:
         content = f"<{self.tag_name}>{user_request}</{self.tag_name}>"
@@ -162,237 +171,61 @@ class MessageCacheAdapter(BaseContextAdapter):
             history_lines.append(turn.request.to_memory_string())
             history_lines.append(turn.response.to_memory_string())
 
-        content = "<history>\n" + "\n".join(history_lines) + "\n</history>"
-        return [{"role": "system", "content": content}]
-
-
-class FactAdapter(ChromaContextAdapter):
-    """
-    Chroma-based fact retrieval adapter using SPO triples.
-    Stores facts as "subject | predicate | object" for better semantic search.
-    """
-    def __init__(self, chroma_path: str, collection_name: str = "facts"):
-        super().__init__(collection_name=collection_name, chroma_path=chroma_path)
-        from chromadb.utils import embedding_functions
-        self.embedding_fn = embedding_functions.SentenceTransformerEmbeddingFunction(
-            model_name="all-MiniLM-L6-v2"
-        )
-        self.collection = self.client.get_or_create_collection(
-            name=collection_name, embedding_function=self.embedding_fn
-        )
-
-    def append_fact(self, subject: str, predicate: str, object: str):
-        """Store a single SPO triple."""
-        triple = f"{subject.strip()} | {predicate.strip()} | {object.strip()}"
-        fact_id = str(uuid4())
-        self.collection.add(
-            documents=[triple],
-            ids=[fact_id],
-            metadatas=[{
-                "subject": subject,
-                "predicate": predicate,
-                "object": object,
-                "created_at": datetime.now().isoformat()
-            }]
-        )
-
-    def build_messages(self, user_request: str, top_k: int = 10) -> list[dict[str, str]]:
-        if not user_request.strip():
-            return []
-
-        results = self.collection.query(query_texts=[user_request], n_results=top_k)
-        facts = [doc for doc in results["documents"][0] if doc]
-
-        if not facts:
-            return []
-
-        content = "<facts>\n" + "\n".join(facts) + "\n</facts>"
+        content = "<chat_history>\n" + "\n".join(history_lines) + "\n</chat_history>"
         return [{"role": "system", "content": content}]
 
 
 class ContextPipeline:
-    def __init__(self, iso_name: str = "juliet", user_name: str = "wallscreet"):
+    def __init__(self, chroma_store: ChromaMemoryStore, iso_name: str = "juliet", user_name: str = "wallscreet"):
+        
         self.instructions = ModelInstructions(method="load", assistant_name=iso_name)
         self.adapters = OrderedDict()
-        self.chroma_path = f"/isos/{iso_name.lower().strip()}/users/{user_name.lower().strip()}/chroma_db"
+        self.chroma_path = f"isos/{iso_name.lower().strip()}/users/{user_name.lower().strip()}/chroma_store"
+        self.semantic_memory_path = f"isos/{iso_name.lower().strip()}/users/{user_name.lower().strip()}/semantic_memory.json"
+        self.episodic_memory_path = f"isos/{iso_name.lower().strip()}/users/{user_name.lower().strip()}/episodic_memory.json"
+        self.facts_memory_path = f"isos/{iso_name.lower().strip()}/users/{user_name.lower().strip()}/facts_memory.json"
 
-        # === Register Context Adapters === #       
-        # Timestamp
+        # === Register Context Adapters === #
         self.register_adapter("timestamp", TimestampAdapter())
-        # Workspace
-        # TODO: Workspace adapter
-        # Facts
-        self.register_adapter("facts", FactAdapter(self.chroma_path))
-        # Procedural Memory (chroma procedural memory)
-        #self.register_adapter("procedural", ProceduralMemoryAdapter(self.chroma_path))
-        # Semantic Memory (chroma knowledge base)
-        #self.register_adapter("semantic", SemanticMemoryAdapter(self.chroma_path))
-        # Episodic Memory (chroma experiencial memory)
-        #self.register_adapter("episodic", EpisodicMemoryAdapter(self.chroma_path))
-        # Message Cache (chat history)
+        self.register_adapter("semantic", SemanticMemoryAdapter(chroma_store=chroma_store))
+        self.register_adapter("episodic", EpisodicMemoryAdapter(chroma_store=chroma_store))
+        # self.register_adapter("procedural", ProceduralMemoryAdapter(chroma_path=self.chroma_path))  # when ready
         self.register_adapter("message_cache", MessageCacheAdapter(capacity=20))
-        # User Request
         self.register_adapter("user_request", UserRequestAdapter(tag_name="user"))
-        # Assistant Prefix
         self.register_adapter("assistant_prefix", AssistantPrefixAdapter(prefix="<assistant>"))
-    
-    def register_adapter(self, name: str, adapter):
+
+    def register_adapter(self, name: str, adapter: BaseContextAdapter):
         self.adapters[name] = adapter
-    
-    def build_messages(self, user_request: str) -> list[dict[str, str]]:
+
+    def build_messages(self, user_request: str) -> List[Dict[str, str]]:
+        """
+        Build the full message list by combining fixed instructions and all adapters.
+        Adapters that require the current user query receive it; others do not.
+        """
         messages = [
             {"role": "system", "content": f"<system>{self.instructions.system_message}</system>"},
             {"role": "assistant", "content": f"<assistant_intro>{self.instructions.assistant_intro}</assistant_intro>"},
             {"role": "system", "content": f"<focus>{self.instructions.assistant_focus}</focus>"},
         ]
-        
-        for name, adapter in self.adapters.items():
-            if name == "user_request":
-                messages.extend(adapter.build_messages(user_request=user_request))
-            elif name == "assistant_prefix":
-                messages.append(adapter.build_messages()[0])
-            elif isinstance(adapter, ChromaContextAdapter):
-                messages.extend(adapter.build_messages(user_request))
+
+        for adapter in self.adapters.values():
+            if adapter.requires_user_request:
+                msgs = adapter.build_messages(user_request=user_request)
             else:
-                messages.extend(adapter.build_messages())
-        
+                msgs = adapter.build_messages()
+            if msgs:
+                messages.extend(msgs)
+
         return messages
 
 
-# ====================================== #
-# ============= TESTS ================== #
-def timestamp_adapter_test():
-    time_adapter = TimestampAdapter()
-    timestamp = time_adapter.build_messages()
-    print(f"Timestamp: {timestamp}")
-
-def chroma_adapter_test():
-    adapter = ChromaContextAdapter(collection_name="test_collection", chroma_path="./test_chroma_db")
-    request = input("Query: ")
-    messages = adapter.build_messages(user_request=request, top_k=5)
-    print(messages)
-
-def episodic_adapter_test():
-    adapter = EpisodicMemoryAdapter(chroma_path="./test_chroma_db")
-    request = input("Query: ")
-    messages = adapter.build_messages(user_request=request)
-    print(messages)
-
-def semantic_adapter_test():
-    adapter = SemanticMemoryAdapter(chroma_path="./test_chroma_db")
-    request = input("Query: ")
-    messages = adapter.build_messages(user_request=request)
-    print(messages)
-
-def chroma_get_collection_stats():
-    from context import ChromaMemoryStore
-    store = ChromaMemoryStore(persist_dir="./test_chroma_db")
-    coll = "semantic"
-    stats = store._get_collection_stats(collection_name=coll)
-    print(stats)
-
-def chroma_store_test():
-    from context import ChromaMemoryStore
-    from messages import Message, Turn
-    
-    store = ChromaMemoryStore(persist_dir="./test_chroma_db", embedding_model="all-MiniLM-L6-v2")
-    
-    request_msg = Message(
-        uuid=uuid4(),
-        role="user",
-        speaker="Wallscreet",
-        content="The unicorn is the national animal of Scotland."
-    )
-    
-    response_msg = Message(
-        uuid=uuid4(),
-        role="assistant",
-        speaker="Juliet",
-        content="Wombat poop is cube-shaped, which prevents it from rolling away."
-    )
-    
-    test_turn = Turn(
-        uuid=uuid4(),
-        conversation_id="12345",
-        request=request_msg,
-        response=response_msg
-    )
-    
-    store.store_turn(conversation_id="12345", turn=test_turn, collection_name="test_collection")
-    print("Stored test turn in Chroma collection.")
-
-def semantic_extraction_test():
-    from context import ChromaMemoryStore
-    store = ChromaMemoryStore(persist_dir="./test_chroma_db")
-    filepath = input("Enter file path to ingest: ")
-    author = input("Enter the author's name: ")
-    results = store.store_knowledge_from_file(
-        file_path=filepath,
-        author=author,
-        json_export_path="./test_chroma_db/semantic_memory.json"
-    )
-    print(results)
-
-def context_pipeline_test():
-    adapter = ContextPipeline()
-    print(adapter.build_messages(user_request="This is the context pipeline test message."))
-
-def asst_prefix_adapter_test():
-    adapter = AssistantPrefixAdapter()
-    print(adapter.build_messages())
-
-def message_cache_adapter_test():
-    from messages import Message, Turn
-    from uuid import uuid4
-    adapter = MessageCacheAdapter()
-    
-    request_msg = Message(
-        uuid=uuid4(),
-        role="user",
-        speaker="Wallscreet",
-        content="Test user request message."
-    )
-    response_msg = Message(
-        uuid=uuid4(),
-        role="assistant",
-        speaker="Juliet",
-        content="This is the test response to the user request test message."
-    )
-    
-    test_turn = Turn(
-        uuid=uuid4(),
-        conversation_id="12345",
-        request=request_msg,
-        response=response_msg
-    )
-    
-    adapter.add_turn(turn=test_turn)
-    
-    print(adapter.build_messages())
-
-def user_request_adapter_test():
-    adapter = UserRequestAdapter()
-    print(adapter.build_messages(user_request="This is a test message."))
-
-def chroma_delete_collection():
-    from context import ChromaMemoryStore
-    store = ChromaMemoryStore(persist_dir="./test_chroma_db")
-    coll_name = input("Enter collection name to delete: ")
-    store._delete_collection(name=coll_name)
-
-# ====================================== #
-# =========== TESTS LOOP =============== #
-
 if __name__ == "__main__":
-    #timestamp_adapter_test()
-    #user_request_adapter_test()
-    #asst_prefix_adapter_test()
-    #message_cache_adapter_test()
-    #context_pipeline_test()
-    #chroma_adapter_test()
-    #chroma_store_test()
-    #chroma_get_collection_stats()
-    #episodic_adapter_test()
-    #semantic_extraction_test()
-    semantic_adapter_test()
-    #chroma_delete_collection()
+    chroma_dir = "isos/juliet/users/wallscreet/chroma_store"
+    iso_name = "juliet"
+    user_name = "wallscreet"
+    chroma_store = ChromaMemoryStore(persist_dir=chroma_dir)
+    pipeline = ContextPipeline(chroma_store=chroma_store, iso_name=iso_name, user_name=user_name)
+    user_request = input("Enter User Request: ")
+    messages = pipeline.build_messages(user_request=user_request)
+    print(messages)
+    

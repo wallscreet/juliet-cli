@@ -11,26 +11,7 @@ from extract_docs import chunk_text, extract_text
 import json
 
 
-def format_chat_history(chat_history: list):
-    """
-    Formats the chat history for display. This didn't really solve anything..
-    """
-    formatted_history = ''.join(chat_history)
-    formatted_history = formatted_history.replace('\n\n', '\n')
 
-    return formatted_history
-
-
-def message_cache_format_to_prompt(message_history):
-    chat_history = []
-    for turn in message_history:
-        turn_request = f"{turn.request.speaker} ({turn.request.timestamp}):\n{turn.request.content}\n"
-        turn_response = f"{turn.response.speaker} ({turn.response.timestamp}):\n{turn.response.content}\n"
-        chat_history.append(turn_request)
-        chat_history.append(turn_response)
-    chat_history = format_chat_history(chat_history)
-    #print(f"\n{chat_history}")
-    return chat_history
 
 
 class MemoryStore:
@@ -93,8 +74,8 @@ class ChromaMemoryStore(MemoryStore):
         }
 
         try:
-            collection_id = "uuid"
             #collection_id = "uuid"
+            collection_id = "uuid"
             
             coll_dir = Path(self.persist_dir) / str(collection_id)
             
@@ -217,54 +198,101 @@ class ChromaMemoryStore(MemoryStore):
             "preview": docs[0][:300] + "..." if docs else None,
             "json_exported": len(json_records) if json_export_path else 0
         }
-    
 
-    def store_turn(self, conversation_id: str, turn: Turn, collection_name: str = "memory"):
+    def store_turn(self, 
+                   conversation_id: str, 
+                   turn: Turn, 
+                   collection_name: str, 
+                   json_export_path: Optional[str] = None
+    ) -> None:
         """
         Store a single turn (request + response as separate docs).
+        Optionally exports to JSON Lines.
         """
-        self.store_batch(conversation_id, [turn], collection_name=collection_name)
+        self.store_batch(conversation_id=conversation_id, 
+                         turns=[turn], 
+                         collection_name=collection_name, 
+                         json_export_path=json_export_path
+        )
 
-    def store_batch(self, conversation_id: str, turns: List[Turn], collection_name: str = "history"):
+    def store_batch(self, 
+                    conversation_id: str, 
+                    turns: List[Turn], 
+                    collection_name: str, 
+                    json_export_path: Optional[str] = None
+    ) -> None:
         """
+        Store multiple turns in batch.
+        Each message (request/response) becomes a separate document in Chroma.
+        Optionally appends full records to a JSON Lines file after storing.
         """
         collection = self._get_collection(collection_name)
 
-        docs, ids, metas = [], [], []
+        docs = []
+        ids = []
+        metadatas = []
+        json_records = []
+
         for turn in turns:
             for suffix, msg in [("req", turn.request), ("res", turn.response)]:
-                ids.append(f"{turn.uuid}_{suffix}")
-                docs.append(msg.to_memory_string())
-                metas.append({
+                doc_id = f"{turn.uuid}_{suffix}"
+                text = msg.to_memory_string()
+
+                metadata = {
                     "conversation_id": conversation_id,
+                    "turn_uuid": str(turn.uuid),
+                    "message_type": suffix,  # "req" or "res"
                     "role": msg.role,
                     "speaker": msg.speaker,
                     "timestamp": msg.timestamp,
-                    #"tags": json.dumps(msg.tags) if msg.tags else None,
+                    # "tags": json.dumps(msg.tags) if msg.tags else None,
+                }
+
+                docs.append(text)
+                ids.append(doc_id)
+                metadatas.append(metadata)
+
+                json_records.append({
+                    "id": doc_id,
+                    "text": text,
+                    "metadata": metadata,
+                    "conversation_id": conversation_id,
+                    "turn_uuid": str(turn.uuid),
+                    "message_type": suffix,
+                    "role": msg.role,
+                    "speaker": msg.speaker,
+                    "timestamp": msg.timestamp
                 })
 
-        collection.add(documents=docs, ids=ids, metadatas=metas)
-
-    def retrieve(self, collection_name: str, query: str, top_k: int = 10) -> List[Message]:
-        """
-        Retrieve semantically relevant messages (normalized to Message schema).
-        """
-        collection = self._get_collection(collection_name)
-        results = collection.query(query_texts=[query], n_results=top_k)
-
-        messages = []
-        for text, meta in zip(results["documents"][0], results["metadatas"][0]):
-            messages.append(
-                Message(
-                    uuid=str(uuid4()),
-                    role=meta.get("role", "unknown"),
-                    speaker=meta.get("speaker", "unknown"),
-                    content=text,
-                    timestamp=meta.get("timestamp", datetime.now().strftime('%Y-%m-%d @ %H:%M')),
-                    tags=meta.get("tags", []),
+        # Store in Chroma (with safe batching if needed)
+        if docs:
+            # Use create_batches for safety with large batches
+            for batch_ids, _, batch_metadatas, batch_documents in create_batches(
+                api=self.client,
+                ids=ids,
+                metadatas=metadatas,
+                documents=docs,
+            ):
+                collection.add(
+                    ids=batch_ids,
+                    documents=batch_documents,
+                    metadatas=batch_metadatas,
                 )
-            )
-        return messages
+
+        # Append to JSON Lines file
+        if json_export_path and json_records:
+            json_path = Path(json_export_path)
+            json_path.parent.mkdir(parents=True, exist_ok=True)
+
+            with json_path.open("a", encoding="utf-8") as f:
+                for record in json_records:
+                    json.dump(record, f, ensure_ascii=False)
+                    f.write("\n")
+
+            print(f"Appended {len(json_records)} episodic records to {json_path}")
+
+        if docs:
+            print(f"Stored {len(docs)} messages ({len(turns)} turns) in collection '{collection_name}'")
 
 
 class YamlMemoryAdapter(MemoryStore):
