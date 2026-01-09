@@ -45,7 +45,7 @@ class ChromaMemoryStore(MemoryStore):
         if name not in self.collections:
             try:
                 coll = self.client.get_collection(name=name)
-                print(f"Loaded existing collection '{name}'")
+                #print(f"Loaded existing collection '{name}'")
             except Exception as e:
                 # If collection doesn't exist create it with embedding function
                 if "not found" in str(e).lower() or isinstance(e, chromadb.errors.NotFoundError):
@@ -289,10 +289,11 @@ class ChromaMemoryStore(MemoryStore):
                     json.dump(record, f, ensure_ascii=False)
                     f.write("\n")
 
-            print(f"Appended {len(json_records)} episodic records to {json_path}")
+            #print(f"Appended {len(json_records)} episodic records to {json_path}")
 
         if docs:
-            print(f"Stored {len(docs)} messages ({len(turns)} turns) in collection '{collection_name}'")
+            pass
+            #print(f"Stored {len(docs)} messages ({len(turns)} turns) in collection '{collection_name}'")
 
 
 class YamlMemoryAdapter(MemoryStore):

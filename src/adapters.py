@@ -177,7 +177,7 @@ class MessageCacheAdapter(BaseContextAdapter):
 
 
 class ContextPipeline:
-    def __init__(self, chroma_store: ChromaMemoryStore, iso_name: str = "juliet", user_name: str = "wallscreet"):
+    def __init__(self, chroma_store: ChromaMemoryStore, message_cache: MessageCacheAdapter, iso_name: str = "juliet", user_name: str = "wallscreet"):
         
         self.instructions = ModelInstructions(method="load", assistant_name=iso_name)
         self.adapters = OrderedDict()
@@ -191,7 +191,7 @@ class ContextPipeline:
         self.register_adapter("semantic", SemanticMemoryAdapter(chroma_store=chroma_store))
         self.register_adapter("episodic", EpisodicMemoryAdapter(chroma_store=chroma_store))
         # self.register_adapter("procedural", ProceduralMemoryAdapter(chroma_path=self.chroma_path))  # when ready
-        self.register_adapter("message_cache", MessageCacheAdapter(capacity=20))
+        self.register_adapter("message_cache", message_cache)
         self.register_adapter("user_request", UserRequestAdapter(tag_name="user"))
         self.register_adapter("assistant_prefix", AssistantPrefixAdapter(prefix="<assistant>"))
 

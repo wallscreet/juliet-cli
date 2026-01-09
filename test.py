@@ -1,8 +1,10 @@
-from src.adapters import ContextPipeline
+from uuid import uuid4
+from src.adapters import ContextPipeline, MessageCacheAdapter
 from src.clients import LLMClient,XAIClient, OllamaClient
 from typing import List
 from src.context import ChromaMemoryStore
 from src.instructions import ModelInstructions
+from src.messages import Message, Turn
 from src.todos import TodoStore
 from src.fact_store import FactStore
 from src.iso import IsoClient
@@ -329,8 +331,105 @@ class ModuleContextPipeline:
         user_request = input("User Request: ")
         messages = self.pipeline.build_messages(user_request=user_request)
         response = self.llm_client.get_response(model="grok-4-1-fast-non-reasoning", messages=messages)
-        print(f"LLM Response:\n{response}")
+        print(f"\nMessages:\n{messages}\n\nLLM Response:\n{response}")
 
+
+class ModuleChatLoop:
+    
+    def __init__(self):
+        self.chroma_dir = "isos/juliet/users/wallscreet/chroma_store"
+        self.iso_name = "juliet"
+        self.user_name = "wallscreet"
+        self.chroma_store = ChromaMemoryStore(persist_dir=self.chroma_dir)
+        self.message_cache = MessageCacheAdapter(capacity=10)
+        self.pipeline = ContextPipeline(chroma_store=self.chroma_store, message_cache=self.message_cache, iso_name=self.iso_name, user_name=self.user_name)
+        self.llm_client = XAIClient()
+        
+        self.options = [
+            ("1", "Chat Loop", self.chat_loop)
+        ]
+    
+    def option_select(self):
+        print("\nSelect an Option:")
+        for key, desc, _ in self.options:
+            print(f"{key}: {desc}")
+        choice = input("> ").strip()
+        for key, _, func in self.options:
+            if choice == key:
+                func()
+                return
+        print("Invalid option")
+    
+    def chat_loop(self):
+        print("Chat loop initiated.")
+        conversation_id = "12345"
+        
+        while True:
+            user_request = input("\nUser >> ")
+            messages = self.pipeline.build_messages(user_request=user_request)
+            print(f"\nMessages:\n{messages}")
+            response = self.llm_client.get_response(model="grok-4-1-fast-non-reasoning", messages=messages)
+            print(f"\nJuliet >> {response}")
+            
+            request_msg = Message(
+                uuid=uuid4(),
+                role="user",
+                speaker="Wallscreet",
+                content=user_request
+            )
+            
+            response_msg = Message(
+                uuid=uuid4(),
+                role="assistant",
+                speaker="Juliet",
+                content=response
+            )
+            
+            new_turn = Turn(
+                uuid=uuid4(),
+                conversation_id=conversation_id,
+                request=request_msg,
+                response=response_msg
+            )
+            
+            self.chroma_store.store_turn(conversation_id=conversation_id, 
+                            turn=new_turn, 
+                            collection_name="episodic",
+                            json_export_path="isos/juliet/users/wallscreet/episodic_memory.json"
+            )
+            
+            self.message_cache.add_turn(turn=new_turn)
+
+
+class ModuleChromaStore:
+    
+    def __init__(self):
+        self.chroma_store = ChromaMemoryStore(persist_dir="isos/juliet/users/wallscreet/chroma_store")
+        
+        self.options = [
+            ("1", "Store Knowledge", self.store_knowledge)
+        ]
+    
+    def option_select(self):
+        print("\nSelect an Option:")
+        for key, desc, _ in self.options:
+            print(f"{key}: {desc}")
+        choice = input("> ").strip()
+        for key, _, func in self.options:
+            if choice == key:
+                func()
+                return
+        print("Invalid option")
+    
+    def store_knowledge(self):
+        filepath = input("Enter file path to ingest: ")
+        author = input("Enter the Author's name: ")
+        results = self.chroma_store.store_knowledge_from_file(
+            file_path=filepath,
+            author=author,
+            json_export_path="isos/juliet/users/wallscreet/semantic_memory.json"
+        )
+        print(results)
 
 # ===================== #
 # ===== MAIN LOOP ===== #
@@ -346,6 +445,8 @@ if __name__ == "__main__":
         ("5", "Fact Store", ModuleFacts),
         ("6", "Iso Client", ModuleIsoClient),
         ("7", "Context Pipeline", ModuleContextPipeline),
+        ("8", "Chat Loop", ModuleChatLoop),
+        ("9", "Chroma Store", ModuleChromaStore),
         # Add more: ("n", "Next Module", NextModuleClass),
     ]
 
