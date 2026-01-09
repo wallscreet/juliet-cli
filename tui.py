@@ -61,6 +61,7 @@ class JulietChat(App):
         self.chroma_store = chroma_store
         self.message_cache = message_cache
         self.context_pipeline = context_pipeline
+        self.debug_messages = False
 
         print(f"Welcome, {self.username.capitalize()}! Chatting with {self.assistant_name.capitalize()}.")
 
@@ -101,24 +102,31 @@ class JulietChat(App):
             return
 
         if user_input.lower() == "/debug":
-            self._add_to_history("**System:** Debug mode not implemented in new pipeline yet.")
-            self.user_input.text = ""
+            if self.debug_messages:
+                self.debug_messages = False
+                self._add_to_history("**System:** Prompt messages debug deactivated.\n---")
+                self.user_input.text = ""
+            else:
+                self.debug_messages = True
+                self._add_to_history("**System:** Prompt Messages debug activated.\n---")
+                self.user_input.text = ""
             return
 
         self._add_to_history(f"**{self.username.capitalize()}:**\n{user_input}\n")
         self.user_input.text = ""
 
         try:
-            response = process_turn(
+            messages, response = process_turn(
                 user_message=user_input,
                 conversation_id=self.conversation_id
             )
         except Exception as e:
             response = f"[Error: {str(e)}]"
 
-        self._add_to_history(
-            f"**{self.assistant_name.capitalize()}:**\n{response}\n\n---"
-        )
+        if self.debug_messages:
+            self._add_to_history(f"**Prompt Messages:**\n{messages}\n")
+            
+        self._add_to_history(f"**{self.assistant_name.capitalize()}:**\n{response}\n\n---")
 
         # Input focus back
         self.user_input.focus()

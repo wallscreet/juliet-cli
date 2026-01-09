@@ -5,7 +5,7 @@ from datetime import datetime
 
 from src.adapters import ContextPipeline, MessageCacheAdapter
 from src.context import ChromaMemoryStore
-from src.clients import LLMClient, XAIClient
+from src.clients import XAIClient
 from src.messages import Message, Turn
 
 app = FastAPI(title="Juliet API")
@@ -20,7 +20,7 @@ chroma_path = f"{base_path}/chroma_store"
 json_export_path = f"{base_path}/episodic_memory.json"
 
 chroma_store = ChromaMemoryStore(persist_dir=chroma_path)
-message_cache = MessageCacheAdapter(capacity=10)
+message_cache = MessageCacheAdapter(capacity=20)
 
 context_pipeline = ContextPipeline(
     chroma_store=chroma_store,
@@ -87,7 +87,7 @@ def process_turn(user_message: str, conversation_id: str = conversation_id) -> s
 
     message_cache.add_turn(turn)
 
-    return response
+    return messages, response
 
 
 @app.post("/chat", response_model=ChatResponse)
