@@ -39,7 +39,7 @@ class ChromaContextAdapter(BaseContextAdapter):
                        top_k: int = 5, 
                        tag: str = None, 
                        max_overfetch: int = 30, 
-                       min_similarity: float = 0.15, 
+                       min_similarity: float = 0.25, 
                        dynamic_multiplier: float = 4.0
     ) -> list[dict[str, str]]:
         if not user_request.strip():
@@ -190,7 +190,8 @@ class ContextPipeline:
         self.register_adapter("timestamp", TimestampAdapter())
         self.register_adapter("semantic", SemanticMemoryAdapter(chroma_store=chroma_store))
         self.register_adapter("episodic", EpisodicMemoryAdapter(chroma_store=chroma_store))
-        # self.register_adapter("procedural", ProceduralMemoryAdapter(chroma_path=self.chroma_path))  # when ready
+        # TODO: self.register_adapter("procedural", ProceduralMemoryAdapter(chroma_store=chroma_store))
+        # TODO: self.register_adapter("facts", FactStoreAdapter(chroma_store=chroma_store))
         self.register_adapter("message_cache", message_cache)
         self.register_adapter("user_request", UserRequestAdapter(tag_name="user"))
         self.register_adapter("assistant_prefix", AssistantPrefixAdapter(prefix="<assistant>"))
@@ -251,24 +252,3 @@ def chroma_store_test(chroma_store: ChromaMemoryStore):
     )
     
     print("Stored test turn in Chroma collection.")
-
-
-if __name__ == "__main__":
-    #== init
-    chroma_dir = "isos/juliet/users/wallscreet/chroma_store"
-    iso_name = "juliet"
-    user_name = "wallscreet"
-    chroma_store = ChromaMemoryStore(persist_dir=chroma_dir)
-    pipeline = ContextPipeline(chroma_store=chroma_store, iso_name=iso_name, user_name=user_name)
-    
-    #== Get User Request
-    #user_request = input("Enter User Request: ")
-    
-    #== Build Messages
-    #messages = pipeline.build_messages(user_request=user_request)
-    #print(messages)
-    
-    #== Get Response
-    
-    #== Store Messages->Turn => chromadb + episodic json
-    chroma_store_test(chroma_store=chroma_store)
